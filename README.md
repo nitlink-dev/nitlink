@@ -75,7 +75,7 @@ NitLink is NOT for you if:
 - **WASAPI audio routing** with volume + mute.
 - **Borderless fullscreen** and **picture-in-picture**.
 - **Discord Rich Presence** showing playing NitLink. Uses Discord's local IPC pipe only; NitLink itself makes no network connections.
-- **Multi-device source picker.** Live capture-device list in the F1 settings sidebar. Click a connected device to switch without restarting; the selection persists. Non-Elgato sources are gated cleanly.
+- **Multi-device source picker.** Live capture-device list in the F1 settings sidebar. Click a connected device to switch without restarting; the selection persists. Generic devices remain SDR-only unless they have an explicit capture policy, such as the GC553Pro manual HDR/P010 path.
 - **Smart signal handling.** Brief HDMI handshake windows (PS5 boot logo, source switch, SDR ↔ HDR transitions) keep showing the last good frame instead of the card's NO SIGNAL placeholder. Real signal loss is detected by format-tagged content fingerprints with a temporal-stability gate.
 
 <p align="center">
@@ -134,6 +134,7 @@ The latency above is *capture latency* (HDMI-into-card → photons-off-your-pane
 
 - **Elgato 4K S: 1080p HDR or 4K SDR, not both.** Its USB 3.2 Gen 1 (5 Gbps) interface can't fit 4K@60 P010 (HDR10, ~12 Gbps). The driver only publishes P010 at 1080p/720p. Elgato lists 4K60 SDR capture via MJPEG and native 4K NV12 at up to 30 fps; negotiated viewer output can be converted by Media Foundation. Hardware ceiling, not a NitLink limitation. See [Elgato's format table](https://www.elgato.com/us/en/explorer/products/capture/4k-s-supported-resolutions-and-frame-rates/).
 - **Elgato 4K S: HDR costs resolution.** Engaging HDR clamps capture to 1080p, so `hdr_enabled` acts as opt-in even with an HDR source connected. `Alt+H` flips between 1080p HDR and 4K SDR at runtime.
+- **AVerMedia GC553Pro HDR is manual.** NitLink does not read a supported HDR InfoFrame interface from this card, so use `Alt+H` to request HDR. P010 modes come exclusively from the card's Media Foundation enumeration; if the requested mode is unavailable, NitLink selects the best native P010 mode and reports it. Manual 1920x1080@60 P010 has been validated on Windows 11; the automatic hardware-selection path is covered by deterministic tests but has not yet been validated on hardware.
 - **Windows HDR can be temperamental.** Moving the window across monitors with different HDR profiles, some notification overlays, or apps with custom ICC profiles can cause flickering/desaturation. Closing and reopening NitLink resets the swap chain. A Windows-wide limitation for all HDR apps.
 - **VRR below ~40Hz falls back to fixed refresh.** Most VRR displays have a ~40Hz floor; below it VRR disengages.
 - **The tearing present can tear on fixed-refresh displays.** That's the tradeoff for the latency win, and it applies whether Low-Latency is on or off. Use a VRR display to absorb it; turning Low-Latency off (`Alt+L`) does not remove tearing, it only adds input lag.
@@ -195,7 +196,8 @@ On an LG OLED, set the HDMI input icon to "Game Console" (not "PC") for correct 
 | Elgato 4K X (USB) | ✅ Tested and validated. Source name + resolution + HDR detect via the UVC extension unit; live source-follow. |
 | Elgato Cam Link 4K (USB) | ✅ Validated (generic UVC, SDR, no vendor controls). |
 | Elgato Game Capture 4K60 Pro MK.2 (PCIe) | ✅ Verified by an owner. HDR auto-detect works and colors match Elgato Studio. |
-| Other Elgato / AverMedia / Magewell / Razer | ❓ Untested — generic Media Foundation capture should still work. |
+| AVerMedia Live Gamer ULTRA S GC553Pro (USB) | ✅ Manual 1920x1080@60 P010 HDR validated on Windows 11. Native P010 modes are enumerated through Media Foundation; HDR auto-detection is not implemented. |
+| Other Elgato / AVerMedia / Magewell / Razer | ❓ Untested — generic Media Foundation capture should still work. |
 
 NitLink uses the Media Foundation source reader, which works with any DirectShow / WDM capture device. Elgato-specific paths (HDR auto-detect, vendor tonemap control, source detection) silently no-op on cards that don't expose them; generic SDR capture still works.
 
@@ -358,7 +360,7 @@ MIT. See `LICENSE`. Third-party licenses (NIS, WebView2, WIL, MJP's Catmull-Rom)
 NitLink is built by one developer. Donations fund hardware testing and distribution. Current goals:
 
 - **Code-signing certificate.** Removes the Windows SmartScreen warning that currently greets every first launch.
-- **AVerMedia Live Gamer Ultra support.** Buy the card, integrate it into the format negotiator, and validate end-to-end so owners of existing AverMedia hardware can use NitLink.
+- **Broader capture-card validation.** Extend the tested Media Foundation format policies beyond the currently validated Elgato devices and AVerMedia GC553Pro.
 
 Support at [ko-fi.com/klosed89](https://ko-fi.com/klosed89). The core NitLink viewer is free, MIT-licensed, and stays that way. No telemetry, no ads, no bundled junk.
 

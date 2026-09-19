@@ -50,6 +50,8 @@ set(NITLINK_SOURCES
     src/capture/hdr_source_poller.h
     src/capture/placeholder_detector.cpp
     src/capture/placeholder_detector.h
+    src/capture/p010_format_selector.cpp
+    src/capture/p010_format_selector.h
     src/renderer/dx11_renderer.cpp
     src/renderer/dx11_renderer.h
     src/renderer/hdr_tone_map.h
@@ -166,4 +168,14 @@ if(BUILD_TESTING)
         d3dcompiler
     )
     add_test(NAME hdr_tone_map_reference COMMAND NitLinkToneMapTests)
+
+    add_executable(NitLinkP010SelectorTests
+        tests/p010_format_selector_tests.cpp
+        src/capture/p010_format_selector.cpp
+        src/capture/p010_format_selector.h
+    )
+    target_include_directories(NitLinkP010SelectorTests PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    add_test(NAME p010_format_selector COMMAND NitLinkP010SelectorTests)
 endif()

@@ -1,5 +1,6 @@
 #include "capture_device.h"
 #include "dshow_capture.h"
+#include "p010_format_selector.h"
 #include <mferror.h>
 #include <debugapi.h>
 #include <sstream>
@@ -86,6 +87,24 @@ static void DebugLog(const std::wstring& msg) {
     OutputDebugStringW((L"[NitLink] " + msg + L"\n").c_str());
 }
 
+CaptureDevicePolicy GetCaptureDevicePolicy(const std::wstring& deviceName)
+{
+    std::wstring lower = deviceName;
+    if (!lower.empty()) {
+        CharLowerBuffW(lower.data(), static_cast<DWORD>(lower.size()));
+    }
+
+    // The model identifier is preferred; the product-name alias covers
+    // drivers that omit it without applying the policy to other AVerMedia
+    // devices.
+    if (lower.find(L"gc553pro") != std::wstring::npos ||
+        (lower.find(L"avermedia") != std::wstring::npos &&
+         lower.find(L"live gamer ultra s") != std::wstring::npos)) {
+        return {CaptureDeviceFamily::AverMediaGC553Pro, true};
+    }
+    return {};
+}
+
 // Optional DirectShow capture backend: when USE_DSHOW.txt sits next to the
 // exe, capture runs through the DirectShow one-hop backend instead of the
 // Media Foundation source reader. Delete the marker to restore Media
@@ -140,6 +159,7 @@ bool CaptureDevice::Open(const DeviceInfo& device)
 {
     m_deviceName = device.name;
     m_needsReopen = false;
+    m_p010SelectionNotice = {};
 
     if (UseDShowBackend()) {
         DebugLog(L"USE_DSHOW.txt present: using DirectShow capture backend");
@@ -527,6 +547,10 @@ bool CaptureDevice::Open(const DeviceInfo& device)
         else                                     ss << L"unknown";
         DebugLog(ss.str());
 
+        if (!(m_requestP010 && IsEqualGUID(subtype, MFVideoFormat_P010))) {
+            m_p010SelectionNotice = {};
+        }
+
         // === HDR DIAGNOSTIC ===
         // Query every color-related attribute MF exposes for full visibility
         // into what the capture driver reports about the signal. Some
@@ -649,21 +673,38 @@ bool CaptureDevice::NegotiateFormat(IMFMediaSource* source)
     if (FAILED(hr)) return false;
 
     DWORD streamCount = 0;
-    pd->GetStreamDescriptorCount(&streamCount);
+    hr = pd->GetStreamDescriptorCount(&streamCount);
+    if (FAILED(hr)) return false;
+
+    const CaptureDevicePolicy policy = GetCaptureDevicePolicy(m_deviceName);
+    const bool gamingP010Auto = m_requestP010 &&
+                                m_overrideSpec.isFullAuto() &&
+                                policy.preferHighFpsP010;
 
     for (DWORD i = 0; i < streamCount; i++) {
         BOOL selected = FALSE;
         ComPtr<IMFStreamDescriptor> sd;
-        pd->GetStreamDescriptorByIndex(i, &selected, &sd);
+        hr = pd->GetStreamDescriptorByIndex(i, &selected, &sd);
+        if (FAILED(hr)) continue;
         if (!selected) continue;
 
         ComPtr<IMFMediaTypeHandler> handler;
-        sd->GetMediaTypeHandler(&handler);
+        hr = sd->GetMediaTypeHandler(&handler);
+        if (FAILED(hr)) continue;
 
         DWORD typeCount = 0;
-        handler->GetMediaTypeCount(&typeCount);
+        hr = handler->GetMediaTypeCount(&typeCount);
+        if (FAILED(hr)) continue;
+
+        const uint32_t targetWidth = m_overrideSpec.width > 0
+            ? m_overrideSpec.width : m_format.width;
+        const uint32_t targetHeight = m_overrideSpec.height > 0
+            ? m_overrideSpec.height : m_format.height;
+        const uint32_t targetFps = m_overrideSpec.fps > 0
+            ? m_overrideSpec.fps : m_format.fps;
 
         uint32_t bestWidth = 0, bestHeight = 0, bestFps = 0;
+        std::vector<P010Candidate> p010Candidates;
 
         // When the caller requested P010 (HDR10 capture), restrict the
         // best-format search to entries whose subtype is actually P010.
@@ -672,33 +713,64 @@ bool CaptureDevice::NegotiateFormat(IMFMediaSource* source)
         // published, and the subsequent NegotiateFormat() call into MF
         // rejects with MF_E_INVALIDMEDIATYPE (0xc00d36b4).
         //
-        // The 4K S only publishes P010 at 1080p and 720p (USB-3 bandwidth
-        // ceiling). When P010 is requested, "largest" then means 1080p@60.
-        // The 4K Pro publishes P010 at 4K, 1080p, 720p, so it picks 4K@60
-        // as before: no behavior change there.
+        // Existing Elgato and SDR selection remains largest width, then FPS.
+        // Only GC553Pro full-auto P010 uses the gaming-oriented selector.
         //
         // README's "Known limitations" section documents this: "Elgato 4K S:
         // 1080p HDR or 4K SDR, not both."
         for (DWORD t = 0; t < typeCount; t++) {
             ComPtr<IMFMediaType> type;
-            handler->GetMediaTypeByIndex(t, &type);
+            hr = handler->GetMediaTypeByIndex(t, &type);
+            if (FAILED(hr)) continue;
 
-            if (m_requestP010) {
-                GUID subtype = {};
-                if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &subtype))) continue;
-                if (!IsEqualGUID(subtype, MFVideoFormat_P010)) continue;
-            }
+            GUID subtype = {};
+            if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &subtype))) continue;
+            if (m_requestP010 && !IsEqualGUID(subtype, MFVideoFormat_P010)) continue;
 
             UINT32 w = 0, h = 0;
-            MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, &w, &h);
+            if (FAILED(MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE,
+                                          &w, &h))) continue;
 
             UINT32 fps = GetFpsFromMediaType(type.Get());
+
+            if (gamingP010Auto) {
+                p010Candidates.push_back({w, h, fps});
+                continue;
+            }
 
             if (w > bestWidth || (w == bestWidth && fps > bestFps)) {
                 bestWidth = w;
                 bestHeight = h;
                 bestFps = fps;
             }
+        }
+
+        if (gamingP010Auto) {
+            const P010SelectionResult selection = SelectGamingP010Candidate(
+                p010Candidates, targetWidth, targetHeight, targetFps);
+            if (selection.index != static_cast<size_t>(-1)) {
+                const auto& best = p010Candidates[selection.index];
+                m_format.width = best.width;
+                m_format.height = best.height;
+                m_format.fps = best.fps;
+
+                std::wstringstream selectionLog;
+                selectionLog << L"P010 Auto selected: "
+                             << best.width << L"x" << best.height << L" @ "
+                             << best.fps << L" FPS; reason="
+                             << P010SelectionReasonText(selection.reason);
+                DebugLog(selectionLog.str());
+
+                if (targetWidth > 0 && targetHeight > 0 &&
+                    (best.width != targetWidth || best.height != targetHeight ||
+                     (targetFps > 0 && best.fps != targetFps))) {
+                    m_p010SelectionNotice = {
+                        true, best.width, best.height, best.fps
+                    };
+                }
+                return true;
+            }
+            DebugLog(L"P010 Auto policy found no native P010 candidates");
         }
 
         if (bestWidth > 0) {

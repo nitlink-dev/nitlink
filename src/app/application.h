@@ -320,6 +320,11 @@ private:
     // shader handles SDR tonemap when userWantsHDR is false.
     bool m_is4KS = false;
 
+    // AVerMedia Live Gamer ULTRA S / GC553Pro has no supported InfoFrame or
+    // vendor-control path here. HDR remains manual and P010 capability comes
+    // only from Media Foundation enumeration.
+    bool m_isGC553Pro = false;
+
     // 4K X device flag, selected by name. Run starts its background source-mode
     // reader; UVC XU timing and InfoFrame reads need a live, locked signal.
     bool m_is4KX = false;

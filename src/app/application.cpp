@@ -29,6 +29,23 @@ static std::wstring Tr(const wchar_t* key) {
     return Localization::Instance().Get(key);
 }
 
+const wchar_t* FormatGuidToString(const GUID& g);
+
+static std::wstring P010UnavailableWarning(const CaptureFormat& format)
+{
+    return L"HDR requested, but no compatible P010 mode was negotiated; HDR was disabled and " +
+           std::wstring(FormatGuidToString(format.subtype)) + L" capture is active.";
+}
+
+static std::wstring P010SelectionWarning(const P010SelectionNotice& notice)
+{
+    std::wstringstream text;
+    text << L"HDR requested, but matching P010 mode is unavailable; using native P010 "
+         << notice.width << L"x" << notice.height << L" @ "
+         << notice.fps << L" FPS.";
+    return text.str();
+}
+
 void Application::UpdateCaptureColorInterpretation(const std::wstring& deviceName) {
     if (!m_renderer) return;
     const bool fullRange = EffectiveSourceFullRange();
@@ -348,6 +365,11 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     std::wstring chosenLower = chosen.name;
     std::transform(chosenLower.begin(), chosenLower.end(), chosenLower.begin(), ::towlower);
     m_is4KS = isElgato && chosenLower.find(L"4k s") != std::wstring::npos;
+    m_isGC553Pro = GetCaptureDevicePolicy(chosen.name).family ==
+                   CaptureDeviceFamily::AverMediaGC553Pro;
+    if (m_isGC553Pro) {
+        AppLog(L"Initialize: AVerMedia GC553Pro recognized; HDR is manual and P010 capability comes from Media Foundation");
+    }
     if (!isElgato) {
         AppLog(L"Initialize: selected device is not Elgato; skipping Elgato-specific HDR controls");
     }
@@ -497,18 +519,8 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     // an HDR game from an SDR dashboard). Reconcile handles the teardown
     // and re-Open; this initial pass just gets the pipeline to a working state.
     //
-    // The full expression is gated on isElgato. The P010 pipeline has
-    // only been validated on Elgato hardware (4K Pro IKsPropertySet
-    // path, 4K S vendor HID path). Non-Elgato sources fall into two
-    // failure modes if P010 is requested anyway: most webcams and
-    // third-party capture cards reject the P010 negotiation, which
-    // triggers the BGRA retry below with misleading "P010 negotiation
-    // failed" log noise; a minority accept the request and deliver
-    // SDR-shaped data in a P010 container, which the BT.2020 PQ shader
-    // renders as garbage. Forcing SDR when the device is not Elgato
-    // keeps the first-frame behavior predictable. Users with an Elgato
-    // 4K Pro / 4K S still get HDR through the normal logic; the gate
-    // only changes behavior on non-Elgato selections.
+    // Existing Elgato auto-detection remains unchanged. GC553Pro is the one
+    // explicit non-Elgato exception and uses only the manual HDR preference.
     const bool userWantsHDR = m_config && m_config->hdrEnabled;
 
     // Source-ID auto-tonemap heuristic: when direct HDR signal detection
@@ -541,11 +553,16 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     //   the shader handles the SDR-from-HDR tonemap when userWantsHDR
     //   is false. No resolution clamp needed.
     //
-    // No direct detection (non-Elgato, or 4K S with a failed probe):
+    // GC553Pro has no supported vendor HDR probe; MF enumeration remains the
+    // authority on whether the requested native P010 mode exists.
+    //
+    // No direct detection (other non-Elgato, or 4K S with a failed probe):
     //   fall back to the source-ID heuristic combined with the user's
     //   hdr_enabled config.
     bool useP010;
-    if (m_is4KS) {
+    if (m_isGC553Pro) {
+        useP010 = userWantsHDR;
+    } else if (m_is4KS) {
         useP010 = isElgato && m_sourceIsHDR10 && userWantsHDR;
     } else {
         useP010 = isElgato &&
@@ -554,7 +571,9 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
                    (userWantsHDR && !m_hdrDetectionAvailable));
     }
     if (useP010) {
-        if (m_is4KS) {
+        if (m_isGC553Pro) {
+            AppLog(L"Initialize: GC553Pro manual HDR request selected; enumerating native P010 modes");
+        } else if (m_is4KS) {
             AppLog(L"Initialize: P010 HDR10 capture pipeline selected (4K S + source HDR + user wants HDR; resolution will be clamped to 1080p)");
         } else if (sourceImpliesHDR && !userWantsHDR) {
             AppLog(L"Initialize: P010 HDR10 capture pipeline selected (auto-enabled from detected source: " +
@@ -565,8 +584,10 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
         }
         m_captureDevice->RequestP010(true);
     } else {
-        if (userWantsHDR && !isElgato) {
-            AppLog(L"Initialize: hdr_enabled is true but the selected device is not Elgato; forcing SDR capture (P010 path is only validated for Elgato hardware)");
+        if (m_isGC553Pro) {
+            AppLog(L"Initialize: GC553Pro SDR capture pipeline selected (NV12 preferred)");
+        } else if (userWantsHDR && !isElgato) {
+            AppLog(L"Initialize: hdr_enabled is true but the selected device is not a validated HDR capture device; forcing SDR capture");
         } else if (m_is4KS && m_sourceIsHDR10 && !userWantsHDR) {
             AppLog(L"Initialize: 4K S source is HDR but user prefers SDR (hdrEnabled=false); using card-side tonemap to deliver clean SDR at full resolution");
         }
@@ -698,6 +719,22 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     m_captureDevice->LogAvailableFormats();
 
     auto format = m_captureDevice->GetOutputFormat();
+
+    if (const P010SelectionNotice notice =
+            m_captureDevice->ConsumeP010SelectionNotice();
+        notice.available) {
+        const std::wstring warning = P010SelectionWarning(notice);
+        AppLog(L"Initialize: " + warning);
+        ShowToast(warning, std::chrono::milliseconds(8000));
+    }
+
+    if (m_isGC553Pro && useP010 &&
+        !IsEqualGUID(format.subtype, MFVideoFormat_P010)) {
+        const std::wstring warning = P010UnavailableWarning(format);
+        AppLog(L"Initialize: " + warning);
+        m_config->hdrEnabled = false;
+        ShowToast(warning, std::chrono::milliseconds(8000));
+    }
 
     // Post-Open tonemap reconciliation. CaptureDevice::Open() can fall
     // back from P010 to NV12 within a single call when the requested
@@ -2997,11 +3034,8 @@ bool Application::ReconcileCaptureFormat(bool force)
     // When HDR detection is unavailable (4K S), fall back to trusting the
     // user's hdrEnabled flag, same as Initialize.
     //
-    // The expression is also gated on isElgato. The P010 path is only
-    // validated for Elgato hardware; for non-Elgato sources (webcams,
-    // third-party capture cards), force SDR regardless of hdrEnabled or
-    // any cached HDR detection state. See the equivalent gate in
-    // Initialize for the full rationale.
+    // Existing Elgato detection policy remains unchanged. GC553Pro is the one
+    // manual-only exception and still relies on native MF capability.
     const bool userWantsHDR = m_config->hdrEnabled;
     // Same 4K S vs 4K Pro split as Initialize:
     //   4K S: wantP010 only when source HDR AND user opts in (resolution
@@ -3010,7 +3044,9 @@ bool Application::ReconcileCaptureFormat(bool force)
     //   4K Pro / non-Elgato detection: existing logic (P010 whenever
     //         source HDR, shader handles SDR tonemap when user wants SDR).
     bool wantP010;
-    if (m_is4KS) {
+    if (m_isGC553Pro) {
+        wantP010 = userWantsHDR;
+    } else if (m_is4KS) {
         wantP010 = isElgato && m_sourceIsHDR10 && userWantsHDR;
     } else {
         wantP010 = isElgato &&
@@ -3218,6 +3254,12 @@ bool Application::ReconcileCaptureFormat(bool force)
         if (opened) {
             AppLog(L"Reconcile: rolled back hdrEnabled, P010 unavailable for this source");
             m_config->hdrEnabled = false;
+            if (m_isGC553Pro) {
+                const std::wstring warning = P010UnavailableWarning(
+                    m_captureDevice->GetOutputFormat());
+                AppLog(L"Reconcile: " + warning);
+                ShowToast(warning, std::chrono::milliseconds(8000));
+            }
         }
     }
 
@@ -3235,6 +3277,14 @@ bool Application::ReconcileCaptureFormat(bool force)
     // can change either), and restart the capture worker.
     m_captureDevice->LogAvailableFormats();
     auto format = m_captureDevice->GetOutputFormat();
+
+    if (const P010SelectionNotice notice =
+            m_captureDevice->ConsumeP010SelectionNotice();
+        notice.available) {
+        const std::wstring warning = P010SelectionWarning(notice);
+        AppLog(L"Reconcile: " + warning);
+        ShowToast(warning, std::chrono::milliseconds(8000));
+    }
 
     // Same post-Open tonemap reconciliation as Initialize. If wantP010
     // was true but Open negotiated a non-P010 format (4K manual override
@@ -3327,6 +3377,11 @@ bool Application::ReconcileCaptureFormat(bool force)
             AppLog(L"Reconcile: capture is non-P010 despite wantP010; "
                    L"disabling renderer HDR mode and rolling back hdrEnabled");
             m_config->hdrEnabled = false;
+            if (m_isGC553Pro) {
+                const std::wstring warning = P010UnavailableWarning(format);
+                AppLog(L"Reconcile: " + warning);
+                ShowToast(warning, std::chrono::milliseconds(8000));
+            }
             if (m_overlay) m_overlay->OnResizeBegin();
             m_renderer->SetHDREnabled(false);
             if (m_overlay) m_overlay->OnResizeEnd();
@@ -3701,6 +3756,7 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     const bool previousHdrDetectionAvailable = m_hdrDetectionAvailable;
     const std::wstring previousPreferredDevice = m_config->preferredDevice;
     const bool previousIs4KS = m_is4KS, previousIs4KX = m_is4KX;
+    const bool previousIsGC553Pro = m_isGC553Pro;
     const bool previousHdrEnabled = m_config->hdrEnabled;
     const auto previousSourceMode = m_source4KProMode;
     const auto previousHdmiSource = m_detectedHdmiSource;
@@ -3733,6 +3789,11 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::towlower);
     m_is4KS = IsElgatoDevice(newDevice.name) && nameLower.find(L"4k s") != std::wstring::npos;
     m_is4KX = IsElgatoDevice(newDevice.name) && nameLower.find(L"4k x") != std::wstring::npos;
+    m_isGC553Pro = GetCaptureDevicePolicy(newDevice.name).family ==
+                   CaptureDeviceFamily::AverMediaGC553Pro;
+    if (m_isGC553Pro) {
+        AppLog(L"SwitchCaptureDevice: GC553Pro selected; HDR remains manual and P010 is MF-capability-driven");
+    }
     m_source4KProMode = {};
     m_detectedHdmiSource.clear();
     m_prevSourceNoSignal = true;
@@ -3784,6 +3845,7 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
         m_config->hdrEnabled = previousHdrEnabled;
         m_is4KS = previousIs4KS;
         m_is4KX = previousIs4KX;
+        m_isGC553Pro = previousIsGC553Pro;
         m_source4KProMode = previousSourceMode;
         m_detectedHdmiSource = previousHdmiSource;
         if (!ReconcileCaptureFormat(/*force=*/ true)) {
