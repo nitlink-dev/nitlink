@@ -3,6 +3,7 @@
 #include <atomic>
 #include <string>
 #include <thread>
+#include "gc553pro_hdr_source.h"
 
 namespace NitLink {
 
@@ -79,6 +80,11 @@ public:
     void Start(const std::wstring& deviceName, bool initialIsHDR10,
                bool initialPropertyAccessible = false);
 
+    // GC553Pro uses a distinct decoder and retains Unknown until a valid
+    // source state remains uncontradicted for the 750 ms settle window.
+    void StartGc553Pro(const std::wstring& deviceName,
+                       Gc553ProSourceHdrState initialState);
+
     // Signal the worker to exit and join. Idempotent; safe to call
     // multiple times. Called automatically by the destructor.
     void Stop();
@@ -93,6 +99,7 @@ public:
     // Returns false (and leaves *outIsHDR10 untouched) if there was
     // no update, so this is safe to call unconditionally per iteration.
     bool AcceptUpdate(bool* outIsHDR10);
+    bool AcceptGc553ProUpdate(Gc553ProSourceHdrState* outState);
 
     // For diagnostics / logging only. Returns true when the worker
     // thread is alive (between Start and Stop).
@@ -104,12 +111,14 @@ private:
     // doesn't have to wait up to a full second for the worker to
     // notice the stop flag.
     void PollerThreadMain(std::wstring deviceName, bool hadAccessibleProbe);
+    void Gc553ProThreadMain(std::wstring deviceName);
 
     std::thread       m_thread;
     std::atomic<bool> m_stop{false};        // worker exits when set
     std::atomic<bool> m_running{false};     // worker is alive
     std::atomic<bool> m_isHDR10{false};     // last-known source state
     std::atomic<bool> m_hasUpdate{false};   // change since last AcceptUpdate
+    std::atomic<Gc553ProSourceHdrState> m_gcState{Gc553ProSourceHdrState::Unknown};
 };
 
 } // namespace NitLink

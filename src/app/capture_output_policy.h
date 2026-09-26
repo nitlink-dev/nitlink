@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "capture/gc553pro_hdr_source.h"
 
 namespace NitLink {
 
@@ -165,6 +166,91 @@ constexpr Gc553ProOutputPolicy DecideGc553ProOutputPolicy(
         actualP010 && !hdrOutputEnabled,
         false,
     };
+}
+
+// Invalid reads never erase a known source state. This also prevents an
+// initial default bool value from masquerading as an SDR probe.
+constexpr Gc553ProSourceHdrState KeepLastGc553ProSourceState(
+    Gc553ProSourceHdrState previous,
+    Gc553ProSourceHdrState probe) noexcept {
+    return probe == Gc553ProSourceHdrState::Unknown ? previous : probe;
+}
+
+struct Gc553ProSourceCapturePolicy {
+    bool desiredCaptureIsP010 = false;
+    bool reopenCapture = false;
+    bool hdrRejected = false;
+};
+
+// GC553Pro Auto follows the confirmed source EOTF in both directions: HDR10/PQ
+// selects P010 and SDR selects NV12. Other known HDR EOTFs keep the currently
+// negotiated capture subtype because they are not SDR and do not have an
+// established renderer policy. Unknown keeps the pre-existing startup/manual
+// fallback; runtime Unknown reads are not published by the source poller.
+// HDR output remains an independent user preference.
+constexpr Gc553ProSourceCapturePolicy DecideGc553ProSourceOutputPolicy(
+    NegotiatedCaptureFormatKind actualFormat,
+    bool hdrOutputEnabled,
+    CaptureFormatPreference preference,
+    bool autoFromSource,
+    Gc553ProSourceHdrState sourceState) noexcept {
+    const auto manual = DecideGc553ProOutputPolicy(
+        actualFormat, hdrOutputEnabled, preference);
+    if (!autoFromSource || sourceState == Gc553ProSourceHdrState::Unknown ||
+        preference != CaptureFormatPreference::Auto) {
+        return {manual.desiredCaptureIsP010, manual.reopenCapture,
+                manual.hdrRejected};
+    }
+    const bool actualP010 = actualFormat == NegotiatedCaptureFormatKind::P010;
+    if (sourceState == Gc553ProSourceHdrState::OtherHdr)
+        return {actualP010, false, false};
+    const bool desiredP010 = sourceState == Gc553ProSourceHdrState::Hdr10Pq;
+    return {desiredP010, desiredP010 != actualP010, false};
+}
+
+// The renderer's input HDR10 flag describes the source signal, not the MF
+// subtype. Preserve the existing subtype-driven behavior for all other paths.
+// SDR-in-P010 color decoding remains unverified for GC553Pro; this only avoids
+// labeling SDR input as HDR10 and applying the known-PQ SDR tone map to it.
+constexpr bool RendererInputIsHdr10(bool isGc553Pro, bool autoFromSource,
+                                    bool sourceIsHdr10,
+                                    bool captureIsP010) noexcept {
+    return isGc553Pro && autoFromSource
+        ? sourceIsHdr10 : captureIsP010;
+}
+
+// The source EOTF read is not attached to an MF sample. While a P010 stream is
+// active, do not reinterpret the previously uploaded frame or a frame that
+// was already delivered before the EOTF update was observed. The first later
+// accepted Real frame may commit the new renderer input flag with its upload.
+struct Gc553ProSourceFrameSync {
+    bool pending = false;
+    std::int64_t observedAtNs = 0;
+
+    constexpr void Begin(std::int64_t nowNs) noexcept {
+        pending = true;
+        observedAtNs = nowNs;
+    }
+    constexpr bool Hold(std::int64_t frameArrivalNs) const noexcept {
+        return pending && (frameArrivalNs <= 0 || frameArrivalNs <= observedAtNs);
+    }
+    constexpr bool Ready(std::int64_t frameArrivalNs) const noexcept {
+        return pending && !Hold(frameArrivalNs);
+    }
+    constexpr void Reset() noexcept {
+        pending = false;
+        observedAtNs = 0;
+    }
+};
+
+constexpr bool IsGc553ProAutoNv12ToP010Reopen(
+    bool isGc553Pro, bool autoFromSource,
+    CaptureFormatPreference preference, NegotiatedCaptureFormatKind actual,
+    Gc553ProSourceHdrState source, bool requestingP010) noexcept {
+    return isGc553Pro && autoFromSource &&
+        preference == CaptureFormatPreference::Auto &&
+        actual == NegotiatedCaptureFormatKind::NV12 &&
+        source == Gc553ProSourceHdrState::Hdr10Pq && requestingP010;
 }
 
 } // namespace NitLink
