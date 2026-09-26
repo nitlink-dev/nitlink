@@ -212,8 +212,12 @@ void Application::UpdateCaptureColorInterpretation(const std::wstring& deviceNam
     m_renderer->SetP010LimitedChroma(limitedChroma);
 
     std::wstringstream ss;
+    const bool gc553ProSdrP010 = m_isGC553Pro && m_config &&
+        m_config->hdrAutoFromSource && m_lastCaptureIsP010 &&
+        m_gc553ProSourceState == Gc553ProSourceHdrState::Sdr;
     ss << L"Capture interpretation: "
-       << (m_lastCaptureIsP010 ? L"P010 PQ / BT.2020" : L"non-P010 path")
+       << (gc553ProSdrP010 ? L"P010 (GC553Pro SDR transfer unverified)"
+           : m_lastCaptureIsP010 ? L"P010 PQ / BT.2020" : L"non-P010 path")
        << L"; device='" << deviceName << L"'"
        << L"; MF range or fallback=" << (m_lastMfFullRange ? L"FULL" : L"LIMITED")
        << L"; effective luma range=" << (fullRange ? L"FULL" : L"LIMITED")
@@ -553,7 +557,7 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     m_isGC553Pro = GetCaptureDevicePolicy(chosen.name).family ==
                    CaptureDeviceFamily::AverMediaGC553Pro;
     if (m_isGC553Pro) {
-        AppLog(L"Initialize: AVerMedia GC553Pro recognized; HDR is manual and P010 capability comes from Media Foundation");
+        AppLog(L"Initialize: AVerMedia GC553Pro recognized; probing source HDR via XU mailbox");
     }
     if (!isElgato) {
         AppLog(L"Initialize: selected device is not Elgato; skipping Elgato-specific HDR controls");
@@ -675,6 +679,15 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
         // below. UpdateWindowTitle reads the actual negotiated subtype to
         // decide between [HDR] and [SDR], so it has to wait for format
         // negotiation. See the UpdateWindowTitle call further down.
+    } else if (m_isGC553Pro) {
+        Gc553ProHdrReader reader(chosen.name);
+        const auto probe = reader.Read();
+        m_gc553ProSourceState = probe.state;
+        m_hdrDetectionAvailable = probe.state != Gc553ProSourceHdrState::Unknown;
+        m_sourceIsHDR10 = probe.state == Gc553ProSourceHdrState::Hdr10Pq;
+        AppLog(m_hdrDetectionAvailable
+            ? L"Initialize: GC553Pro valid source EOTF received"
+            : L"Initialize: GC553Pro source state unknown; retaining manual startup policy");
     } else {
         // Non-Elgato source has no InfoFrame property. Default to SDR
         // detection state; the user's hdrEnabled config can still
@@ -704,8 +717,8 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     // an HDR game from an SDR dashboard). Reconcile handles the teardown
     // and re-Open; this initial pass just gets the pipeline to a working state.
     //
-    // Existing Elgato auto-detection remains unchanged. GC553Pro is the one
-    // explicit non-Elgato exception and uses only the manual HDR preference.
+    // Elgato auto-detection remains unchanged. GC553Pro has its own decoded
+    // source EOTF; Unknown falls back to the existing manual preference.
     const bool userWantsHDR = m_config && m_config->hdrEnabled;
     const CaptureFormatOverride configuredOverride =
         m_config ? m_config->GetOverride(chosen.name) : CaptureFormatOverride{};
@@ -742,18 +755,20 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     //   the shader handles the SDR-from-HDR tonemap when userWantsHDR
     //   is false. No resolution clamp needed.
     //
-    // GC553Pro has no supported vendor HDR probe; MF enumeration remains the
-    // authority on whether the requested native P010 mode exists.
+    // GC553Pro source EOTF chooses the requested mode when auto detection is
+    // enabled; MF enumeration remains the authority on native P010 support.
     //
     // No direct detection (other non-Elgato, or 4K S with a failed probe):
     //   fall back to the source-ID heuristic combined with the user's
     //   hdr_enabled config.
     bool useP010;
     if (m_isGC553Pro) {
-        const auto startupPolicy = DecideGc553ProOutputPolicy(
+        const auto startupPolicy = DecideGc553ProSourceOutputPolicy(
             NegotiatedCaptureFormatKind::Other,
             userWantsHDR,
-            formatPreference);
+            formatPreference,
+            m_config->hdrAutoFromSource,
+            m_gc553ProSourceState);
         useP010 = startupPolicy.desiredCaptureIsP010;
         if (startupPolicy.hdrRejected) {
             m_config->hdrEnabled = false;
@@ -772,7 +787,7 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     }
     if (useP010) {
         if (m_isGC553Pro) {
-            AppLog(L"Initialize: GC553Pro manual HDR request selected; enumerating native P010 modes");
+            AppLog(L"Initialize: GC553Pro P010 requested; enumerating native P010 modes");
         } else if (m_is4KS) {
             AppLog(L"Initialize: P010 HDR10 capture pipeline selected (4K S + source HDR + user wants HDR; resolution will be clamped to 1080p)");
         } else if (sourceImpliesHDR && !userWantsHDR) {
@@ -944,6 +959,10 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
 
     if (m_isGC553Pro && useP010 &&
         !IsEqualGUID(format.subtype, MFVideoFormat_P010)) {
+        if (m_config->hdrAutoFromSource &&
+            m_gc553ProSourceState == Gc553ProSourceHdrState::Hdr10Pq &&
+            formatPreference == CaptureFormatPreference::Auto)
+            m_gc553ProAutoP010Rejected = true;
         const std::wstring warning = P010UnavailableWarning(format);
         AppLog(L"Initialize: " + warning);
         m_config->hdrEnabled = false;
@@ -1009,24 +1028,25 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
         UpdateCaptureColorInterpretation(m_currentDeviceInfo.name);
     }
 
-    // Tell the renderer whether the data flowing through the capture buffer
-    // is PQ-encoded HDR10. This is derived from the negotiated capture
-    // format, NOT from m_sourceIsHDR10: the two answer different questions:
+    // Keep source EOTF and negotiated capture format separate. GC553Pro Auto
+    // uses its XU/EOTF source state for the renderer's HDR10 input flag;
+    // other paths retain their existing subtype-driven behavior:
     //
     //   m_sourceIsHDR10  = "did source detection report HDR10 from the
     //                       upstream HDMI signal?" (always false on 4K S)
-    //   captureIsP010    = "is the data in the capture buffer right now
-    //                       PQ-encoded BT.2020 10-bit YUV?"
+    //   captureIsP010    = "is the capture buffer a 10-bit P010 container?"
     //
-    // The shader needs the second answer. On the 4K Pro they match because
-    // the poller drives format selection. On the 4K S they diverge:
+    // On the 4K Pro they match because the poller drives format selection.
+    // On the 4K S they diverge:
     // m_sourceIsHDR10 is always false but the user can still ask for P010
     // capture via Alt+H, and when they do the shader must pick the BT.2020
     // PQ path or BT.2020 reds get misinterpreted as BT.709 reds (orange to
     // red shift).
     if (m_renderer) {
         const bool captureIsP010 = IsEqualGUID(format.subtype, MFVideoFormat_P010);
-        m_renderer->SetSourceIsHDR10(captureIsP010);
+        m_renderer->SetSourceIsHDR10(RendererInputIsHdr10(
+            m_isGC553Pro, m_config && m_config->hdrAutoFromSource,
+            m_sourceIsHDR10, captureIsP010));
 
         // Thread the negotiated subtype GUID through to the renderer as a
         // stable enum, replacing the renderer's old per-frame byte-count
@@ -1808,7 +1828,10 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     // Seed the poller with the init-time source state already captured
     // a few hundred lines up so the FIRST transition the worker reports
     // is a real change vs. the init state, not a redundant copy of it.
-    if (m_hdrDetectionAvailable && !m_is4KS && !m_is4KX) {
+    if (m_isGC553Pro) {
+        m_hdrPoller = std::make_unique<HDRSourcePoller>();
+        m_hdrPoller->StartGc553Pro(m_currentDeviceInfo.name, m_gc553ProSourceState);
+    } else if (m_hdrDetectionAvailable && !m_is4KS && !m_is4KX) {
         m_hdrPoller = std::make_unique<HDRSourcePoller>();
         m_hdrPoller->Start(m_currentDeviceInfo.name, m_sourceIsHDR10, m_hdrDetectionAvailable);
     } else {
@@ -1896,18 +1919,42 @@ void Application::Run()
         // needed. AcceptUpdate is atomic test-and-clear and a cheap no-op
         // when no update is pending.
         if (m_hdrPoller) {
-            bool newSourceIsHDR10 = false;
-            if (m_hdrPoller->AcceptUpdate(&newSourceIsHDR10)) {
-                AppLog(newSourceIsHDR10
-                    ? L"HDR auto-detect: source went HDR10"
-                    : L"HDR auto-detect: source went SDR");
-                m_sourceIsHDR10 = newSourceIsHDR10;
-                // Don't push to renderer here: ReconcileCaptureFormat will
-                // re-negotiate capture format on the next line and set the
-                // renderer's HDR10 flag from the resulting actual format.
-                // Pushing m_sourceIsHDR10 here would create a one-iteration
-                // mismatch where the renderer thinks the capture is P010
-                // before the capture device has actually switched.
+            if (m_isGC553Pro) {
+                Gc553ProSourceHdrState newState{};
+                if (m_hdrPoller->AcceptGc553ProUpdate(&newState)) {
+                    m_gc553ProSourceState = KeepLastGc553ProSourceState(
+                        m_gc553ProSourceState, newState);
+                    m_hdrDetectionAvailable = true;
+                    m_sourceIsHDR10 = newState == Gc553ProSourceHdrState::Hdr10Pq;
+                    m_gc553ProAutoP010Rejected = false;
+                    if (newState == Gc553ProSourceHdrState::Sdr)
+                        m_gc553ProP010ReopenToastShown = false;
+                    if (m_config && m_config->hdrAutoFromSource &&
+                        m_lastCaptureIsP010 && m_captureDevice &&
+                        m_captureDevice->IsCapturing()) {
+                        const auto nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch()).count();
+                        m_gc553ProSourceFrameSync.Begin(nowNs);
+                    } else {
+                        m_gc553ProSourceFrameSync.Reset();
+                    }
+                    AppLog(L"HDR auto-detect: GC553Pro valid source state changed");
+                    UpdateWindowTitle();
+                }
+            } else {
+                bool newSourceIsHDR10 = false;
+                if (m_hdrPoller->AcceptUpdate(&newSourceIsHDR10)) {
+                    AppLog(newSourceIsHDR10
+                        ? L"HDR auto-detect: source went HDR10"
+                        : L"HDR auto-detect: source went SDR");
+                    m_sourceIsHDR10 = newSourceIsHDR10;
+                    // Don't push to renderer here: ReconcileCaptureFormat will
+                    // re-negotiate capture format on the next line and set the
+                    // renderer's HDR10 flag from the resulting actual format.
+                    // Pushing m_sourceIsHDR10 here would create a one-iteration
+                    // mismatch where the renderer thinks the capture is P010
+                    // before the capture device has actually switched.
+                }
             }
         }
 
@@ -2138,6 +2185,16 @@ void Application::Run()
                     m_gc553ProPlaceholderTransitionGuardConsumed = true;
                     AppLog(L"GC553Pro: quarantined one unstable known-placeholder transition frame");
                 }
+                // The P010 stream has no per-sample EOTF tag. Keep the
+                // old texture under its old interpretation until a sample
+                // delivered after the new XU state was observed can replace it.
+                // Classification still runs above, preserving placeholder
+                // detector and one-frame guard semantics.
+                if (m_isGC553Pro && m_config && m_config->hdrAutoFromSource &&
+                    m_lastCaptureIsP010 &&
+                    m_gc553ProSourceFrameSync.Hold(frame.arrivalWallNs)) {
+                    shouldUpload = false;
+                }
                 freshFrameIsRealSource =
                     shouldUpload;
 
@@ -2207,8 +2264,28 @@ void Application::Run()
             //   InvalidTransitionalFrame: structural zero-filled sample;
             //                             suppress without touching detector
             //                             or source-liveness state.
+            const bool commitGc553ProEotf = shouldUpload && m_isGC553Pro &&
+                m_config && m_config->hdrAutoFromSource && m_lastCaptureIsP010 &&
+                m_gc553ProSourceFrameSync.Ready(frame.arrivalWallNs);
+            if (commitGc553ProEotf) {
+                // Invalidate just before replacing the texture. A failed GPU
+                // upload cannot expose the old frame under the new EOTF flag.
+                m_renderer->InvalidateCaptureFrame();
+                m_renderer->UpdateCaptureTexture(
+                    frame.data, frame.size, frame.width, frame.height);
+                if (m_renderer->HasCaptureFrame()) {
+                    m_renderer->SetSourceIsHDR10(m_sourceIsHDR10);
+                    m_gc553ProSourceFrameSync.Reset();
+                } else {
+                    shouldUpload = false;
+                    freshFrameIsRealSource = false;
+                }
+            }
             if (shouldUpload) {
-                m_renderer->UpdateCaptureTexture(frame.data, frame.size, frame.width, frame.height);
+                if (!commitGc553ProEotf) {
+                    m_renderer->UpdateCaptureTexture(
+                        frame.data, frame.size, frame.width, frame.height);
+                }
                 m_captureFrameValidForSession = true;
                 auto captureEnd = Clock::now();
                 m_captureLatencyMs = std::chrono::duration<double, std::milli>(captureEnd - captureStart).count();
@@ -2250,6 +2327,7 @@ void Application::Run()
                     AppLog(L"HDR transition: accepted real frame restored capture presentation");
                     m_captureTransitionActive = false;
                 }
+                m_gc553ProP010ReopenPresentation = false;
                 // Motion-recency gate: this frame is non-placeholder content
                 // arriving from the capture device, so bump the content
                 // freshness marker the placeholder gate consults. See
@@ -2826,11 +2904,15 @@ void Application::Run()
             const bool signalActive = m_frameBuffer && m_frameBuffer->IsSignalActive();
 
             if (presentationState == PresentationState::Transition && m_overlay) {
-                m_overlay->DrawStatusMessage(
-                    m_renderer->GetWindowWidth(), m_renderer->GetWindowHeight(),
-                    L"overlay.switchingHdr");
-                if (m_overlay->IsUsingOffscreen()) {
-                    m_renderer->CompositeUI(m_overlay->GetOffscreenSRV());
+                if (m_gc553ProP010ReopenPresentation) {
+                    drawWaitingStatus();
+                } else {
+                    m_overlay->DrawStatusMessage(
+                        m_renderer->GetWindowWidth(), m_renderer->GetWindowHeight(),
+                        L"overlay.switchingHdr");
+                    if (m_overlay->IsUsingOffscreen()) {
+                        m_renderer->CompositeUI(m_overlay->GetOffscreenSRV());
+                    }
                 }
             } else if (presentationState == PresentationState::NoSignal && m_overlay) {
                 m_overlay->DrawNoSignal(m_renderer->GetWindowWidth(),
@@ -3009,9 +3091,13 @@ void Application::Run()
         // Null guard: see HDR branch above. Same rationale.
         const bool signalActive = m_frameBuffer && m_frameBuffer->IsSignalActive();
         if (presentationState == PresentationState::Transition && m_overlay) {
-            m_overlay->DrawStatusMessage(
-                m_renderer->GetWindowWidth(), m_renderer->GetWindowHeight(),
-                L"overlay.switchingHdr");
+            if (m_gc553ProP010ReopenPresentation) {
+                drawWaitingStatus();
+            } else {
+                m_overlay->DrawStatusMessage(
+                    m_renderer->GetWindowWidth(), m_renderer->GetWindowHeight(),
+                    L"overlay.switchingHdr");
+            }
         } else if (presentationState == PresentationState::NoSignal && m_overlay) {
             m_overlay->DrawNoSignal(m_renderer->GetWindowWidth(),
                                     m_renderer->GetWindowHeight());
@@ -3577,9 +3663,9 @@ bool Application::ReconcileCaptureFormat(bool force)
     // stream that is actually running; RequestP010()/IsP010Requested() only
     // describe a future Open attempt and must not drive this decision.
     //
-    // An already negotiated P010 stream is retained when HDR output is turned
-    // off. The renderer's existing P010 HDR-to-SDR path handles that output
-    // mode, so no Media Foundation reader restart is needed.
+    // The output HDR preference does not select the capture subtype in
+    // GC553Pro Auto; confirmed source EOTF does. Thus changing output policy
+    // alone does not cause a Media Foundation reader restart.
     const bool userWantsHDR = m_config->hdrEnabled;
     const bool retainedFormatBelongsToCurrentDevice =
         m_captureDevice->HasPublishedFormatForDevice(m_currentDeviceInfo);
@@ -3599,10 +3685,20 @@ bool Application::ReconcileCaptureFormat(bool force)
         FormatPreferenceForOverride(configuredOverride);
 
     bool wantP010;
-    Gc553ProOutputPolicy gc553ProPolicy{};
+    Gc553ProSourceCapturePolicy gc553ProPolicy{};
     if (m_isGC553Pro) {
-        gc553ProPolicy = DecideGc553ProOutputPolicy(
-            actualCaptureFormat, userWantsHDR, formatPreference);
+        if (!m_config->hdrAutoFromSource ||
+            formatPreference != CaptureFormatPreference::Auto)
+            m_gc553ProP010ReopenToastShown = false;
+        gc553ProPolicy = DecideGc553ProSourceOutputPolicy(
+            actualCaptureFormat, userWantsHDR, formatPreference,
+            m_config->hdrAutoFromSource, m_gc553ProSourceState);
+        if (m_gc553ProAutoP010Rejected && !force &&
+            m_config->hdrAutoFromSource &&
+            m_gc553ProSourceState == Gc553ProSourceHdrState::Hdr10Pq &&
+            formatPreference == CaptureFormatPreference::Auto &&
+            actualCaptureFormat != NegotiatedCaptureFormatKind::P010)
+            gc553ProPolicy.reopenCapture = false;
         wantP010 = gc553ProPolicy.desiredCaptureIsP010;
         if (gc553ProPolicy.hdrRejected) {
             m_config->hdrEnabled = false;
@@ -3625,6 +3721,16 @@ bool Application::ReconcileCaptureFormat(bool force)
             wantP010, formatPreference);
     }
     const bool actualIsP010 = actualCaptureFormat == NegotiatedCaptureFormatKind::P010;
+    // This runs even when the capture policy takes the same-format path.
+    // It also restores the existing subtype-driven renderer flag if the user
+    // turns GC553Pro source-auto mode off while keeping the same P010 stream.
+    if (m_isGC553Pro && !m_config->hdrAutoFromSource)
+        m_gc553ProSourceFrameSync.Reset();
+    if (m_isGC553Pro && m_renderer &&
+        !m_gc553ProSourceFrameSync.pending) {
+        m_renderer->SetSourceIsHDR10(RendererInputIsHdr10(
+            true, m_config->hdrAutoFromSource, m_sourceIsHDR10, actualIsP010));
+    }
     const bool hasNonFormatOverride =
         configuredOverride.format.empty() &&
         (configuredOverride.width > 0 ||
@@ -3663,13 +3769,19 @@ bool Application::ReconcileCaptureFormat(bool force)
     if (captureStopped && !force && retryNow < m_nextCaptureRetry) return false;
 
     if (!formatReopenNeeded && !force && !captureStopped) {
-        // The capture stream already has the required format. In particular,
-        // P010 + HDR OFF remains P010 and is rendered through the existing
-        // HDR-to-SDR tone-map path; the renderer-side HDR output switch below
-        // is independent of this capture-side no-op.
+        // The capture stream already has the format selected by the last
+        // stable GC553Pro source EOTF. Output HDR remains independent of this
+        // capture-side no-op.
         return false;
     }
 
+    // This is past the no-op and retry gates: an actual Stop/Close/Open for
+    // the first GC553Pro Auto NV12 -> P010 promotion is about to begin.
+    // The toast changes only the UI hint; transition/WaitingForCapture still
+    // protects presentation until an accepted Real frame arrives.
+    m_gc553ProP010ReopenPresentation = IsGc553ProAutoNv12ToP010Reopen(
+        m_isGC553Pro, m_config->hdrAutoFromSource, formatPreference,
+        actualCaptureFormat, m_gc553ProSourceState, wantP010);
     if (formatReopenNeeded && !noSignalPresentationLatched &&
         !m_captureTransitionActive) {
         m_captureTransitionActive = true;
@@ -3865,6 +3977,10 @@ bool Application::ReconcileCaptureFormat(bool force)
             AppLog(L"Reconcile: rolled back hdrEnabled, P010 unavailable for this source");
             m_config->hdrEnabled = false;
             if (m_isGC553Pro) {
+                if (m_config->hdrAutoFromSource &&
+                    m_gc553ProSourceState == Gc553ProSourceHdrState::Hdr10Pq &&
+                    formatPreference == CaptureFormatPreference::Auto)
+                    m_gc553ProAutoP010Rejected = true;
                 const std::wstring warning = P010UnavailableWarning(
                     m_captureDevice->GetOutputFormat());
                 AppLog(L"Reconcile: " + warning);
@@ -3887,6 +4003,12 @@ bool Application::ReconcileCaptureFormat(bool force)
     // can change either), and restart the capture worker.
     m_captureDevice->LogAvailableFormats();
     auto format = m_captureDevice->GetOutputFormat();
+    if (m_isGC553Pro && wantP010 &&
+        !IsEqualGUID(format.subtype, MFVideoFormat_P010) &&
+        m_config->hdrAutoFromSource &&
+        m_gc553ProSourceState == Gc553ProSourceHdrState::Hdr10Pq &&
+        formatPreference == CaptureFormatPreference::Auto)
+        m_gc553ProAutoP010Rejected = true;
     m_nonGcP010Fallback.CompleteOpen(
         !m_isGC553Pro && wantP010, IsEqualGUID(format.subtype, MFVideoFormat_P010));
 
@@ -3958,9 +4080,9 @@ bool Application::ReconcileCaptureFormat(bool force)
         m_lastMfFullRange   = format.fullRange;
         m_lastCaptureIsP010 = IsEqualGUID(format.subtype, MFVideoFormat_P010);
         UpdateCaptureColorInterpretation(deviceToOpen.name);
-        // Push the shader's HDR-source flag based on the ACTUAL negotiated
-        // capture format, not on m_sourceIsHDR10. See the long-form comment
-        // in Initialize() for why these are different questions on the 4K S.
+        // GC553Pro Auto uses verified source EOTF for the shader's HDR10 flag.
+        // The other paths keep their existing subtype-driven behavior. See
+        // Initialize() for the distinction between source and capture format.
         //
         // Critical: do NOT write to m_sourceIsHDR10 here. That variable is
         // consumed at the top of this function (and elsewhere) to decide
@@ -3970,7 +4092,11 @@ bool Application::ReconcileCaptureFormat(bool force)
         // stay in P010", and Alt+H off would no-op instead of switching
         // back to NV12.
         const bool captureIsP010 = IsEqualGUID(format.subtype, MFVideoFormat_P010);
-        m_renderer->SetSourceIsHDR10(captureIsP010);
+        if (m_isGC553Pro && m_config->hdrAutoFromSource && !captureIsP010)
+            m_gc553ProSourceFrameSync.Reset();
+        m_renderer->SetSourceIsHDR10(RendererInputIsHdr10(
+            m_isGC553Pro, m_config && m_config->hdrAutoFromSource,
+            m_sourceIsHDR10, captureIsP010));
 
         // Same subtype-to-enum routing as Initialize. Critical to do this BEFORE
         // StartCapture so the new capture worker thread can never deliver a
@@ -4022,6 +4148,12 @@ bool Application::ReconcileCaptureFormat(bool force)
     if (!started) {
         AppLog(L"Reconcile: capture start failed; will retry");
         return false;
+    }
+    if (m_gc553ProP010ReopenPresentation &&
+        IsEqualGUID(format.subtype, MFVideoFormat_P010) &&
+        !m_gc553ProP010ReopenToastShown) {
+        ShowToast(Tr(L"toast.gc553proCaptureSwitch"));
+        m_gc553ProP010ReopenToastShown = true;
     }
     m_nextCaptureRetry = {};
     ApplyPresentCap();
@@ -4460,7 +4592,9 @@ bool Application::RecoverFromDeviceLost()
         m_lastCaptureIsP010 = IsEqualGUID(fmt.subtype, MFVideoFormat_P010);
         UpdateCaptureColorInterpretation(m_currentDeviceInfo.name);
         const bool captureIsP010 = IsEqualGUID(fmt.subtype, MFVideoFormat_P010);
-        m_renderer->SetSourceIsHDR10(captureIsP010);
+        m_renderer->SetSourceIsHDR10(RendererInputIsHdr10(
+            m_isGC553Pro, m_config && m_config->hdrAutoFromSource,
+            m_sourceIsHDR10, captureIsP010));
         DX11Renderer::CaptureFormatKind rkind;
         if (captureIsP010) {
             rkind = DX11Renderer::CaptureFormatKind::P010;
@@ -4540,6 +4674,8 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     // device would leave the user staring at a black window.
     const DeviceInfo previousDevice = m_currentDeviceInfo;
     const bool previousSourceIsHDR10 = m_sourceIsHDR10;
+    const auto previousGc553ProSourceState = m_gc553ProSourceState;
+    const bool previousGc553ProAutoP010Rejected = m_gc553ProAutoP010Rejected;
     const bool previousHdrDetectionAvailable = m_hdrDetectionAvailable;
     const std::wstring previousPreferredDevice = m_config->preferredDevice;
     const bool previousIs4KS = m_is4KS, previousIs4KX = m_is4KX;
@@ -4552,7 +4688,10 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     if (m_hdrPoller) { m_hdrPoller->Stop(); m_hdrPoller.reset(); }
     m_4kxPoller.Stop();
     const auto restartHdrPoller = [this] {
-        if (m_hdrDetectionAvailable && !m_is4KS && !m_is4KX) {
+        if (m_isGC553Pro) {
+            m_hdrPoller = std::make_unique<HDRSourcePoller>();
+            m_hdrPoller->StartGc553Pro(m_currentDeviceInfo.name, m_gc553ProSourceState);
+        } else if (m_hdrDetectionAvailable && !m_is4KS && !m_is4KX) {
             m_hdrPoller = std::make_unique<HDRSourcePoller>();
             m_hdrPoller->Start(m_currentDeviceInfo.name, m_sourceIsHDR10, m_hdrDetectionAvailable);
         }
@@ -4579,7 +4718,7 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     m_isGC553Pro = GetCaptureDevicePolicy(newDevice.name).family ==
                    CaptureDeviceFamily::AverMediaGC553Pro;
     if (m_isGC553Pro) {
-        AppLog(L"SwitchCaptureDevice: GC553Pro selected; HDR remains manual and P010 is MF-capability-driven");
+        AppLog(L"SwitchCaptureDevice: GC553Pro selected; probing source HDR via XU mailbox");
     }
     m_source4KProMode = {};
     m_detectedHdmiSource.clear();
@@ -4591,7 +4730,18 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     // devices and clear the detection flags so the reconcile's
     // wantP010 decision below falls through to the user's hdrEnabled
     // preference, same as the 4K S path does at startup.
-    if (IsElgatoDevice(newDevice.name)) {
+    m_gc553ProSourceFrameSync.Reset();
+    m_gc553ProP010ReopenToastShown = false;
+    m_gc553ProP010ReopenPresentation = false;
+    m_gc553ProSourceState = Gc553ProSourceHdrState::Unknown;
+    m_gc553ProAutoP010Rejected = false;
+    if (m_isGC553Pro) {
+        Gc553ProHdrReader reader(newDevice.name);
+        const auto probe = reader.Read();
+        m_gc553ProSourceState = probe.state;
+        m_hdrDetectionAvailable = probe.state != Gc553ProSourceHdrState::Unknown;
+        m_sourceIsHDR10 = probe.state == Gc553ProSourceHdrState::Hdr10Pq;
+    } else if (IsElgatoDevice(newDevice.name)) {
         HDRSourceInfo srcInfo = ReadElgatoHDRSource(newDevice.name);
         m_hdrDetectionAvailable = srcInfo.propertyAccessible;
         m_sourceIsHDR10 = srcInfo.propertyAccessible ? srcInfo.isHDR10 : false;
@@ -4627,6 +4777,8 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
         // failure rather than a half-open pipeline.
         m_currentDeviceInfo = previousDevice;
         m_sourceIsHDR10 = previousSourceIsHDR10;
+        m_gc553ProSourceState = previousGc553ProSourceState;
+        m_gc553ProAutoP010Rejected = previousGc553ProAutoP010Rejected;
         m_hdrDetectionAvailable = previousHdrDetectionAvailable;
         m_config->preferredDevice = previousPreferredDevice;
         m_config->hdrEnabled = previousHdrEnabled;
@@ -5135,7 +5287,10 @@ void Application::UpdateWindowTitle()
     //
     // Suffix only appears when direct HDR detection is available, to
     // avoid the misleading implication that an absent suffix means SDR.
-    if (m_hdrDetectionAvailable) {
+    if (m_hdrDetectionAvailable &&
+        (!m_isGC553Pro ||
+         m_gc553ProSourceState == Gc553ProSourceHdrState::Sdr ||
+         m_gc553ProSourceState == Gc553ProSourceHdrState::Hdr10Pq)) {
         const bool effectiveHDR = m_sourceIsHDR10 &&
                                   m_config && m_config->hdrEnabled;
         title += L" [";

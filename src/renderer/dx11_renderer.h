@@ -205,18 +205,20 @@ public:
     // existing capture-card behavior; only effective limited mode consumes it.
     void SetP010LimitedChroma(bool enabled) { m_p010LimitedChroma = enabled; }
 
-    // Tell the renderer whether the active capture source is HDR10 (PQ/BT.2020).
-    // True when the Elgato InfoFrame reported EOTF=ST.2084 AND the pipeline
-    // is capturing in P010 mode (raw HDR10 passthrough). False otherwise.
+    // Tell the renderer whether the active capture source is known HDR10.
+    // GC553Pro Auto uses XU/EOTF; existing device paths retain their current
+    // negotiated-format policy. The capture format is set separately by
+    // SetSourceFormat, and the output preference by SetHDREnabled.
     //
-    // The P010 shader uses this in combination with m_hdrEnabled to pick its
-    // output path:
-    //   sourceIsHDR10 && hdrEnabled  -> write PQ BT.2020 to HDR backbuffer
+    // The P010 shader currently uses this to select its HDR-to-SDR tone map:
     //   sourceIsHDR10 && !hdrEnabled -> PQ decode -> linear -> BT.2020 to
     //                                  BT.709 -> BT.2446A-derived luminance
     //                                  EETF -> sRGB
     //                                  to SDR backbuffer (in-shader HDR-to-SDR
     //                                  path)
+    // Its other P010 branch still expects PQ/BT.2020 input. SDR pixels
+    // delivered in P010 by GC553Pro have not yet been characterized; this
+    // flag does not assert their transfer function or make that branch SDR-safe.
     //
     // The second case exists because the Elgato hardware tonemap toggle
     // doesn't reliably re-engage mid-session via IKsPropertySet: the card

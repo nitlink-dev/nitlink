@@ -1,5 +1,6 @@
 #include "hdr_source_poller.h"
 #include "elgato_hdr_control.h"
+#include "gc553pro_hdr_source.h"
 
 #include <chrono>
 #include <sstream>
@@ -55,6 +56,19 @@ void HDRSourcePoller::Start(const std::wstring& deviceName, bool initialIsHDR10,
     Log(L"started");
 }
 
+void HDRSourcePoller::StartGc553Pro(
+    const std::wstring& deviceName, Gc553ProSourceHdrState initialState)
+{
+    if (m_running.load(std::memory_order_acquire)) return;
+    if (m_thread.joinable()) m_thread.join();
+    m_gcState.store(initialState, std::memory_order_release);
+    m_hasUpdate.store(false, std::memory_order_release);
+    m_stop.store(false, std::memory_order_release);
+    m_running.store(true, std::memory_order_release);
+    m_thread = std::thread(&HDRSourcePoller::Gc553ProThreadMain, this, deviceName);
+    Log(L"GC553Pro source poller started");
+}
+
 void HDRSourcePoller::Stop()
 {
     if (!m_running.load(std::memory_order_acquire) && !m_thread.joinable()) {
@@ -89,6 +103,58 @@ bool HDRSourcePoller::AcceptUpdate(bool* outIsHDR10)
         *outIsHDR10 = m_isHDR10.load(std::memory_order_acquire);
     }
     return true;
+}
+
+bool HDRSourcePoller::AcceptGc553ProUpdate(Gc553ProSourceHdrState* outState)
+{
+    if (!m_hasUpdate.exchange(false, std::memory_order_acq_rel)) return false;
+    if (outState) *outState = m_gcState.load(std::memory_order_acquire);
+    return true;
+}
+
+void HDRSourcePoller::Gc553ProThreadMain(std::wstring deviceName)
+{
+    using namespace std::chrono_literals;
+    // Construct and destroy the reader on this thread: its COM apartment and
+    // all DirectShow interfaces have the same owner and teardown order.
+    auto reader = std::make_unique<Gc553ProHdrReader>(deviceName);
+    Gc553ProSourceStateDebouncer stateDebouncer(
+        m_gcState.load(std::memory_order_acquire));
+    int failures = 0;
+    while (!m_stop.load(std::memory_order_acquire)) {
+        const auto probe = reader->Read();
+        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        stateDebouncer.Observe(probe.state, nowMs);
+        if (probe.state == Gc553ProSourceHdrState::Unknown) {
+            // Keep the last valid state. Rebind only after repeated failures
+            // so transient mailbox errors do not churn the USB filter.
+            if (++failures >= 5) {
+                reader.reset();
+                reader = std::make_unique<Gc553ProHdrReader>(deviceName);
+                failures = 0;
+            }
+        } else {
+            failures = 0;
+        }
+        Gc553ProSourceHdrState stableState{};
+        const auto publishNowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (stateDebouncer.PublishIfSettled(publishNowMs, &stableState)) {
+            m_gcState.store(stableState, std::memory_order_release);
+            m_hasUpdate.store(true, std::memory_order_release);
+            Log(L"GC553Pro source HDR state stable; publishing transition");
+        }
+        // Probe cadence remains about 250 ms. A candidate is published by the
+        // first poll at/after its 750 ms deadline. Unknown reads neither count
+        // as a change nor cancel the deadline; only a contrary valid state can
+        // replace the candidate. Elgato's cadence and transition behavior are
+        // unchanged.
+        for (int i = 0; i < 5 && !m_stop.load(std::memory_order_acquire); ++i)
+            std::this_thread::sleep_for(50ms);
+    }
+    reader.reset();
+    m_running.store(false, std::memory_order_release);
 }
 
 void HDRSourcePoller::PollerThreadMain(std::wstring deviceName, bool hadAccessibleProbe)

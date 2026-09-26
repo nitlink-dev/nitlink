@@ -7,6 +7,7 @@
 #include "capture/frame_buffer.h"
 #include "capture/frame_differ.h"
 #include "capture/hdr_source_poller.h"
+#include "capture/gc553pro_hdr_source.h"
 #include "capture/elgato_hdr_control.h"
 #include "capture/placeholder_detector.h"
 #include "input/hotkey_manager.h"
@@ -302,6 +303,11 @@ private:
     // has the HDR toggle on, the pipeline negotiates P010 capture and uses
     // the HDR10 shader path. When false, the pipeline stays on BGRA + SDR.
     bool m_sourceIsHDR10 = false;
+    Gc553ProSourceHdrState m_gc553ProSourceState = Gc553ProSourceHdrState::Unknown;
+    bool m_gc553ProAutoP010Rejected = false;
+    Gc553ProSourceFrameSync m_gc553ProSourceFrameSync{};
+    bool m_gc553ProP010ReopenToastShown = false;
+    bool m_gc553ProP010ReopenPresentation = false;
     // Failed opens retry without tying recovery to another format change.
     std::chrono::steady_clock::time_point m_nextCaptureRetry{};
 
@@ -331,9 +337,7 @@ private:
     // shader handles SDR tonemap when userWantsHDR is false.
     bool m_is4KS = false;
 
-    // AVerMedia Live Gamer ULTRA S / GC553Pro has no supported InfoFrame or
-    // vendor-control path here. HDR remains manual and P010 capability comes
-    // only from Media Foundation enumeration.
+    // GC553Pro has an independently decoded XU mailbox source HDR readout.
     bool m_isGC553Pro = false;
 
     // 4K X device flag, selected by name. Run starts its background source-mode

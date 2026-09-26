@@ -42,6 +42,8 @@ set(NITLINK_SOURCES
     src/capture/device_enumerator.h
     src/capture/elgato_hdr_control.cpp
     src/capture/elgato_hdr_control.h
+    src/capture/gc553pro_hdr_source.cpp
+    src/capture/gc553pro_hdr_source.h
     src/capture/elgato_hid_4ks.cpp
     src/capture/elgato_hid_4ks.h
     src/capture/frame_buffer.cpp
@@ -299,4 +301,12 @@ if(BUILD_TESTING)
         ${CMAKE_SOURCE_DIR}/src
     )
     add_test(NAME frame_buffer_activity COMMAND NitLinkFrameBufferActivityTests)
+
+    add_executable(NitLinkGc553ProHdrTests
+        tests/gc553pro_hdr_source_tests.cpp
+        src/capture/gc553pro_hdr_source.cpp
+    )
+    target_include_directories(NitLinkGc553ProHdrTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(NitLinkGc553ProHdrTests PRIVATE ole32 oleaut32 strmiids)
+    add_test(NAME gc553pro_hdr_source COMMAND NitLinkGc553ProHdrTests)
 endif()
