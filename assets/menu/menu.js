@@ -179,6 +179,7 @@
       const trigger = document.getElementById('source-trigger');
       const nameEl = document.getElementById('meta-source');
       const pop = document.getElementById('source-popover');
+      const hdmiPicker = document.getElementById('hdmi-source-picker');
       if (!trigger || !nameEl || !pop) return;
 
       let lastDevices = [];
@@ -387,7 +388,9 @@
       };
 
       const renderPopover = () => {
-        pop.innerHTML = '';
+        // Keep the identity picker mounted with its listeners, selection and
+        // custom draft when device/format state refreshes the original menu.
+        pop.replaceChildren();
         sourceSelects = {};
 
         // Device list: only when there is more than one to pick from.
@@ -428,6 +431,7 @@
         fmtSectLabel.className = 'source-popover-section-label';
         fmtSectLabel.textContent = t('source.manualFormat');
         pop.appendChild(fmtSectLabel);
+        pop.appendChild(hdmiPicker);
 
         const resolutions = uniqueResolutions();
         const currentResValue = lastOverride.width
@@ -556,6 +560,9 @@
         e.stopPropagation();
         togglePop();
       });
+      // The original popover is inside its trigger. Input/editor clicks must
+      // not bubble into that trigger and toggle the containing source menu.
+      pop.addEventListener('click', e => e.stopPropagation());
       document.addEventListener('click', e => {
         if (!pop.contains(e.target) && !trigger.contains(e.target)) closePop();
       });
@@ -575,8 +582,8 @@
       // Re-render is suppressed when focus is inside the popover.
       // PushSettingsState fires every ~1s on the C++ side while the
       // settings menu is visible. Without this guard, the periodic
-      // re-render destroys the popover's children (pop.innerHTML = ''
-      // inside renderPopover) right when a user has the native <select>
+      // re-render replaces the capture-format children right when a user
+      // has the native <select>
       // dropdown open, which closes their dropdown mid-pick. The next
       // un-focused state push will catch the latest data.
       window._updateSource = (devices, active, availableFormats, override) => {
@@ -616,6 +623,123 @@
           else refreshSourceSelects();
         }
       };
+    })();
+
+    // HDMI identity uses its own picker and never requests device enumeration
+    // or capture-format changes. Selection is confirmed by the native state.
+    (() => {
+      const picker = document.getElementById('hdmi-source-picker');
+      const trigger = document.getElementById('hdmi-source-trigger');
+      const nameEl = document.getElementById('meta-hdmi-source');
+      const customRow = document.getElementById('hdmi-source-custom-row');
+      const edit = document.getElementById('hdmi-source-custom-edit');
+      const editor = document.getElementById('hdmi-source-custom-editor');
+      const input = document.getElementById('hdmi-source-custom-input');
+      const error = document.getElementById('hdmi-source-custom-error');
+      let choices = [];
+      let options = [];
+      let selected = 'auto';
+      let effective = '';
+      let custom = '';
+      let choicesKey = '';
+      const choiceLabel = choice => choice.value === 'auto' ? t('value.auto')
+        : choice.value === 'other' ? t('hdmiSource.otherOption') : choice.label;
+      const closeEditor = (restoreFocus = false) => {
+        editor.hidden = true;
+        if (restoreFocus) trigger.focus();
+      };
+      const renderOptions = () => {
+        trigger.replaceChildren();
+        options = choices.map(choice => {
+          const { value } = choice;
+          const option = document.createElement('option');
+          option.value = value;
+          trigger.appendChild(option);
+          return { option, choice };
+        });
+      };
+      const openEditor = () => {
+        editor.hidden = false;
+        error.hidden = true;
+        input.value = custom;
+        input.focus();
+        input.select();
+      };
+      // Use the same HTML select and shared CSS as resolution/FPS/format.
+      trigger.addEventListener('click', event => event.stopPropagation());
+      trigger.addEventListener('change', event => {
+        event.stopPropagation();
+        const value = trigger.value;
+        if (!choices.some(choice => choice.value === value)) {
+          trigger.value = selected;
+          return;
+        }
+        post('setManualHdmiSource', value);
+        if (value === 'other') openEditor();
+        else closeEditor(true);
+      });
+      edit.addEventListener('click', openEditor);
+      picker.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !editor.hidden) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeEditor(true);
+        }
+      });
+      document.getElementById('source-trigger').addEventListener('click', () => closeEditor());
+      document.addEventListener('click', event => {
+        if (!picker.contains(event.target)) closeEditor();
+      });
+      const saveCustom = () => {
+        const name = input.value.trim();
+        if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/u.test(input.value) ||
+            Array.from(name).length > 64) {
+          error.hidden = false;
+          input.focus();
+          return;
+        }
+        post('setManualHdmiSourceCustom', name);
+        closeEditor(true);
+      };
+      document.getElementById('hdmi-source-custom-save').addEventListener('click', saveCustom);
+      document.getElementById('hdmi-source-custom-cancel').addEventListener('click', () => closeEditor(true));
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          saveCustom();
+        }
+      });
+      window._updateManualHdmiSource = (manual, sourceLabel, customName, nativeChoices) => {
+        // Fixed labels come from the same native mapping as title and Discord.
+        if (Array.isArray(nativeChoices)) {
+          const valid = nativeChoices.filter(choice => choice &&
+            typeof choice.value === 'string' && typeof choice.label === 'string');
+          const key = JSON.stringify(valid);
+          if (key !== choicesKey) {
+            choicesKey = key;
+            choices = valid;
+            renderOptions();
+          }
+        }
+        trigger.disabled = options.length === 0;
+        if (typeof manual === 'string')
+          selected = choices.some(choice => choice.value === manual) ? manual : 'auto';
+        if (typeof sourceLabel === 'string') effective = sourceLabel;
+        if (typeof customName === 'string') custom = customName;
+        options.forEach(({ option, choice }) => {
+          const label = choiceLabel(choice);
+          if (option.textContent !== label) option.textContent = label;
+        });
+        trigger.value = selected;
+        customRow.hidden = selected !== 'other';
+        nameEl.textContent = selected === 'auto' ? t('value.auto')
+          : selected === 'other' && !custom ? t('hdmiSource.other')
+          : effective;
+        trigger.title = effective
+          ? `${nameEl.textContent} · ${effective}`
+          : t('meta.hdmiSourceInfo');
+      };
+      window._updateManualHdmiSource('auto', '');
     })();
 
     // Transient toast notification. Pushed from C++ via state.notification
@@ -754,6 +878,8 @@
           s.captureFormatOverride
         );
       }
+      window._updateManualHdmiSource(
+        s.manualHdmiSource, s.effectiveHdmiSource, s.manualHdmiSourceCustom, s.manualHdmiSourceOptions);
 
       // One-shot user-facing notice from the C++ pipeline. Most state
       // pushes carry an empty string here; non-empty means the C++ side

@@ -43,6 +43,7 @@ void HDRSourcePoller::Start(const std::wstring& deviceName, bool initialIsHDR10,
     }
     if (m_thread.joinable()) m_thread.join();
 
+    ResetSourceMetadata(HdmiSourceVrrState::Unknown);
     // Seed the last-known state so the first probe that matches doesn't
     // fire a spurious transition report.
     m_isHDR10.store(initialIsHDR10, std::memory_order_release);
@@ -57,10 +58,12 @@ void HDRSourcePoller::Start(const std::wstring& deviceName, bool initialIsHDR10,
 }
 
 void HDRSourcePoller::StartGc553Pro(
-    const std::wstring& deviceName, Gc553ProSourceHdrState initialState)
+    const std::wstring& deviceName, Gc553ProSourceHdrState initialState,
+    HdmiSourceVrrState initialVrr)
 {
     if (m_running.load(std::memory_order_acquire)) return;
     if (m_thread.joinable()) m_thread.join();
+    ResetSourceMetadata(initialVrr);
     m_gcState.store(initialState, std::memory_order_release);
     m_hasUpdate.store(false, std::memory_order_release);
     m_stop.store(false, std::memory_order_release);
@@ -112,14 +115,53 @@ bool HDRSourcePoller::AcceptGc553ProUpdate(Gc553ProSourceHdrState* outState)
     return true;
 }
 
+void HDRSourcePoller::ResetSourceMetadata(HdmiSourceVrrState initialVrr)
+{
+    std::lock_guard<std::mutex> lock(m_metadataMutex);
+    m_gcTiming = {};
+    m_gcVrr = initialVrr;
+    m_hasTimingUpdate = false;
+    m_hasVrrUpdate = false;
+}
+
+bool HDRSourcePoller::AcceptGc553ProTimingUpdate(HdmiSourceTiming* outTiming)
+{
+    std::lock_guard<std::mutex> lock(m_metadataMutex);
+    if (!m_hasTimingUpdate) return false;
+    if (outTiming) *outTiming = m_gcTiming;
+    m_hasTimingUpdate = false;
+    return true;
+}
+
+bool HDRSourcePoller::AcceptGc553ProVrrUpdate(HdmiSourceVrrState* outState)
+{
+    std::lock_guard<std::mutex> lock(m_metadataMutex);
+    if (!m_hasVrrUpdate) return false;
+    if (outState) *outState = m_gcVrr;
+    m_hasVrrUpdate = false;
+    return true;
+}
+
 void HDRSourcePoller::Gc553ProThreadMain(std::wstring deviceName)
 {
     using namespace std::chrono_literals;
     // Construct and destroy the reader on this thread: its COM apartment and
     // all DirectShow interfaces have the same owner and teardown order.
-    auto reader = std::make_unique<Gc553ProHdrReader>(deviceName);
+    const auto makeReader = [&]() -> std::unique_ptr<Gc553ProSourceReader> {
+        if (m_gcReaderFactory) return m_gcReaderFactory(deviceName);
+        return std::make_unique<Gc553ProHdrReader>(deviceName);
+    };
+    auto reader = makeReader();
     Gc553ProSourceStateDebouncer stateDebouncer(
         m_gcState.load(std::memory_order_acquire));
+    HdmiSourceVrrState initialVrr;
+    {
+        std::lock_guard<std::mutex> lock(m_metadataMutex);
+        initialVrr = m_gcVrr;
+    }
+    HdmiSourceVrrStateDebouncer vrrDebouncer(initialVrr);
+    auto nextMetadataProbe = std::chrono::steady_clock::time_point::min();
+    bool timingInitialized = false;
     int failures = 0;
     while (!m_stop.load(std::memory_order_acquire)) {
         const auto probe = reader->Read();
@@ -131,11 +173,31 @@ void HDRSourcePoller::Gc553ProThreadMain(std::wstring deviceName)
             // so transient mailbox errors do not churn the USB filter.
             if (++failures >= 5) {
                 reader.reset();
-                reader = std::make_unique<Gc553ProHdrReader>(deviceName);
+                reader = makeReader();
                 failures = 0;
             }
         } else {
             failures = 0;
+        }
+        // Read-only metadata shares this COM/XU owner, sequentially after HDR.
+        // Its 1 Hz cadence and notifications are separate from HDR policy.
+        if (std::chrono::steady_clock::now() >= nextMetadataProbe &&
+            !m_stop.load(std::memory_order_acquire)) {
+            const auto timing = reader->ReadTiming();
+            {
+                std::lock_guard<std::mutex> lock(m_metadataMutex);
+                if (!timingInitialized || timing != m_gcTiming) {
+                    m_gcTiming = timing;
+                    m_hasTimingUpdate = true;
+                }
+            }
+            timingInitialized = true;
+            const auto vrr = reader->ReadVrr();
+            const auto sampledAt = std::chrono::steady_clock::now();
+            vrrDebouncer.Observe(vrr,
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    sampledAt.time_since_epoch()).count());
+            nextMetadataProbe = sampledAt + 1s;
         }
         Gc553ProSourceHdrState stableState{};
         const auto publishNowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -144,6 +206,13 @@ void HDRSourcePoller::Gc553ProThreadMain(std::wstring deviceName)
             m_gcState.store(stableState, std::memory_order_release);
             m_hasUpdate.store(true, std::memory_order_release);
             Log(L"GC553Pro source HDR state stable; publishing transition");
+        }
+        HdmiSourceVrrState stableVrr{};
+        if (vrrDebouncer.PublishIfSettled(publishNowMs, &stableVrr)) {
+            std::lock_guard<std::mutex> lock(m_metadataMutex);
+            m_gcVrr = stableVrr;
+            m_hasVrrUpdate = true;
+            Log(L"GC553Pro source VRR enabled/signaling state stable; refreshing metadata");
         }
         // Probe cadence remains about 250 ms. A candidate is published by the
         // first poll at/after its 750 ms deadline. Unknown reads neither count

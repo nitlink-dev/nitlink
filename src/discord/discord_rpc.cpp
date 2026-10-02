@@ -238,10 +238,13 @@ void DiscordRPC::WorkerLoop()
         if (doClear) {
             cmd << ",\"activity\":null}}";
         } else {
-            cmd << ",\"activity\":{"
-                << "\"details\":\"" << EscapeJson(WideToUtf8(details)) << "\","
-                << "\"state\":\""   << EscapeJson(WideToUtf8(state))   << "\","
-                << "\"timestamps\":{\"start\":" << startUnix << "}";
+            cmd << ",\"activity\":{\"timestamps\":{\"start\":" << startUnix << "}";
+            // Match Discord's optional-string serialization: omit unavailable
+            // source/signal fields rather than sending empty text or filler.
+            if (!details.empty())
+                cmd << ",\"details\":\"" << EscapeJson(WideToUtf8(details)) << "\"";
+            if (!state.empty())
+                cmd << ",\"state\":\"" << EscapeJson(WideToUtf8(state)) << "\"";
             if (!largeKey.empty()) {
                 cmd << ",\"assets\":{"
                     << "\"large_image\":\"" << EscapeJson(largeKey) << "\","

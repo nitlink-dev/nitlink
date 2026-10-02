@@ -19,6 +19,7 @@
 #include "capture_output_policy.h"
 #include "source_cadence.h"
 #include "presentation_state.h"
+#include "hdmi_source_display.h"
 #include "discord/discord_rpc.h"
 
 #include <memory>
@@ -54,14 +55,14 @@ private:
     void ProcessFrame();
     void UpdateTaskbarIcon(const std::wstring& iconPath);
 
-    // Compose and apply the Windows title bar text from the current
-    // detection state. Format: "NitLink - <source> [HDR]"  or
-    // "NitLink - <source> [SDR]"  when source identifier is known,
-    // plain "NitLink" otherwise. Called from Initialize after the 4K S
-    // vendor HID block populates m_detectedHdmiSource + m_sourceIsHDR10,
-    // and from ReconcileCaptureFormat after a force-reopen re-probe
-    // updates m_sourceIsHDR10.
+    // Identity and live signal metadata are independent. Label changes also
+    // refresh Discord, preserving the current activity's start time.
     void UpdateWindowTitle();
+    std::wstring GetEffectiveHdmiSourceLabel() const;
+    std::wstring GetLiveHdmiSignalLabel() const;
+    HdmiConfirmedRange GetConfirmedHdmiRange() const;
+    std::wstring GetConfirmedHdmiRangeLabel() const;
+    HdmiSourceVrrState GetHdmiSourceVrrState() const;
 
     // Push current config + live stats to the WebView2 settings UI so its
     // toggles/sliders/labels reflect reality. Called on open, on hotkey-
@@ -75,7 +76,7 @@ private:
     // the renderer. UpdateDiscordForCurrentGame pushes the current game's
     // title/art-key to Rich Presence (or clears it when gameId is empty).
     void ApplyGameSettings(const std::string& gameId);
-    void UpdateDiscordForCurrentGame();
+    void UpdateDiscordForCurrentGame(bool preserveStartTime = false);
 
     // Capture-side HDR/SDR reconciliation. Compares the format the capture
     // device is currently running (P010 vs BGRA/NV12) against what the
@@ -261,6 +262,7 @@ private:
     bool m_settingsVisible = false;
     std::unique_ptr<Config>           m_config;
     std::unique_ptr<DiscordRPC>       m_discord;
+    std::chrono::system_clock::time_point m_discordActivityStart{};
 
     // Background-thread monitor for HDMI source HDR<->SDR transitions.
     // Created in Initialize iff the Elgato HDR property GUID is readable
@@ -312,6 +314,10 @@ private:
     // has the HDR toggle on, the pipeline negotiates P010 capture and uses
     // the HDR10 shader path. When false, the pipeline stays on BGRA + SDR.
     bool m_sourceIsHDR10 = false;
+    std::wstring m_lastHdmiDisplayTitle;
+    HdmiConfirmedRange m_lastHdmiDisplayRange = HdmiConfirmedRange::Unknown;
+    HdmiSourceTiming m_gc553ProSourceTiming;
+    HdmiSourceVrrState m_gc553ProSourceVrr = HdmiSourceVrrState::Unknown;
     Gc553ProSourceHdrState m_gc553ProSourceState = Gc553ProSourceHdrState::Unknown;
     bool m_gc553ProAutoP010Rejected = false;
     Gc553ProSourceFrameSync m_gc553ProSourceFrameSync{};
@@ -479,6 +485,9 @@ private:
     std::chrono::steady_clock::time_point m_lastGoodFrameTime{};
     bool m_hasEverReceivedFrame      = false;
     bool m_captureFrameValidForSession = false;
+    // Presentation history for this capture device. A format reopen retains
+    // it; startup/device switch/GPU recovery must establish Capture again.
+    bool m_hadStableCapturePresentation = false;
     bool m_captureTransitionActive = false;
     bool m_noSignalPresentationLatched = false;
     // GC553Pro-only, one-frame upload quarantine for the first temporally

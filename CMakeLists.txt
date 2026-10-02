@@ -23,6 +23,8 @@ set(NITLINK_SOURCES
     src/app/application.h
     src/app/config.cpp
     src/app/config.h
+    src/app/hdmi_source.h
+    src/app/hdmi_source_display.h
     src/app/localization.cpp
     src/app/localization.h
     src/app/game_database.cpp
@@ -45,6 +47,9 @@ set(NITLINK_SOURCES
     src/capture/elgato_hdr_control.h
     src/capture/gc553pro_hdr_source.cpp
     src/capture/gc553pro_hdr_source.h
+    src/capture/hdmi_raw_timing.h
+    src/capture/hdmi_source_vrr.h
+    src/capture/gc553pro_vtem.h
     src/capture/elgato_hid_4ks.cpp
     src/capture/elgato_hid_4ks.h
     src/capture/frame_buffer.cpp
@@ -132,6 +137,7 @@ install(DIRECTORY assets/menu DESTINATION bin/assets)
 install(FILES third_party/nis/NIS_Scaler.h third_party/nis/LICENSE.txt
         DESTINATION bin/third_party/nis)
 install(FILES LICENSE LICENSES.md ACKNOWLEDGMENTS.md DESTINATION bin)
+install(FILES docs/hdmi-source-metadata.md DESTINATION bin/docs)
 
 # nis_upscaler.cpp compiles NIS_Main.hlsl at runtime via D3DCompile, which
 # #includes "NIS_Scaler.h" from disk. Copy it next to the .exe so include
@@ -288,6 +294,13 @@ if(BUILD_TESTING)
     )
     add_test(NAME presentation_state COMMAND NitLinkPresentationStateTests)
 
+    add_executable(NitLinkSignalResyncTests tests/signal_resync_presentation_tests.cpp
+        src/capture/frame_buffer.cpp src/capture/placeholder_detector.cpp
+        src/capture/gc553pro_hdr_source.cpp src/app/localization.cpp)
+    target_include_directories(NitLinkSignalResyncTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(NitLinkSignalResyncTests PRIVATE ole32 oleaut32 strmiids)
+    add_test(NAME signal_resync_presentation COMMAND NitLinkSignalResyncTests)
+
     add_executable(NitLinkP010NegotiationTests
         tests/p010_negotiation_tests.cpp
         src/capture/capture_device.cpp
@@ -377,4 +390,25 @@ if(BUILD_TESTING)
     target_include_directories(NitLinkGc553ProHdrTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(NitLinkGc553ProHdrTests PRIVATE ole32 oleaut32 strmiids)
     add_test(NAME gc553pro_hdr_source COMMAND NitLinkGc553ProHdrTests)
+
+    add_executable(NitLinkManualHdmiSourceTests tests/manual_hdmi_source_tests.cpp
+        src/app/config.cpp src/app/settings_message.cpp src/app/game_database.cpp)
+    target_include_directories(NitLinkManualHdmiSourceTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME manual_hdmi_source COMMAND NitLinkManualHdmiSourceTests)
+
+    add_executable(NitLinkGc553ProRawTimingTests tests/gc553pro_raw_timing_tests.cpp)
+    target_include_directories(NitLinkGc553ProRawTimingTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME gc553pro_raw_timing COMMAND NitLinkGc553ProRawTimingTests)
+
+    add_executable(NitLinkGc553ProSourceVrrTests tests/gc553pro_source_vrr_tests.cpp)
+    target_include_directories(NitLinkGc553ProSourceVrrTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME gc553pro_source_vrr COMMAND NitLinkGc553ProSourceVrrTests)
+
+    add_executable(NitLinkGc553ProSourceMetadataTests tests/gc553pro_source_metadata_poller_tests.cpp
+        src/capture/hdr_source_poller.cpp src/capture/gc553pro_hdr_source.cpp
+        src/capture/elgato_hdr_control.cpp)
+    target_include_directories(NitLinkGc553ProSourceMetadataTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(NitLinkGc553ProSourceMetadataTests PRIVATE ole32 oleaut32 strmiids)
+    add_test(NAME gc553pro_source_metadata_poller COMMAND NitLinkGc553ProSourceMetadataTests)
+    set_tests_properties(gc553pro_source_metadata_poller PROPERTIES TIMEOUT 30)
 endif()

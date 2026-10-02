@@ -1310,6 +1310,7 @@ bool DX11Renderer::CreateFullscreenQuad()
 
 bool DX11Renderer::CreateCaptureResources(uint32_t width, uint32_t height, bool isNV12)
 {
+    ForgetResyncFrame(CaptureFrameHoldReason::ResourcesRecreated);
     m_captureTexture.Reset();
     m_captureSRV.Reset();
     m_captureSRV_UV.Reset();
@@ -1378,6 +1379,7 @@ bool DX11Renderer::CreateCaptureResources(uint32_t width, uint32_t height, bool 
 
 bool DX11Renderer::CreateCaptureResourcesP010(uint32_t width, uint32_t height)
 {
+    ForgetResyncFrame(CaptureFrameHoldReason::ResourcesRecreated);
     // P010 capture texture. The DXGI format is planar 16-bit-per-channel,
     // with the top 10 bits of each 16-bit value carrying the data and the
     // bottom 6 bits zero. Two SRVs are bound into the same underlying texture:
@@ -1585,6 +1587,9 @@ void DX11Renderer::UpdateCaptureTexture(const uint8_t* data, uint32_t size, uint
         return;
     }
 
+    // WRITE_DISCARD has already replaced the old contents, even if validation
+    // below rejects this mapped buffer. Do not hold an unpresented/partial write.
+    m_captureFrameHold.Invalidate(CaptureFrameHoldReason::TextureOverwritten);
     if (!mapped.pData || mapped.RowPitch < rowBytes) {
         m_context->Unmap(m_captureTexture.Get(), 0);
         return;
@@ -1650,6 +1655,8 @@ void DX11Renderer::UpdateCaptureTexture(const uint8_t* data, uint32_t size, uint
     m_context->Unmap(m_captureTexture.Get(), 0);
     m_phaseUploadMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
     m_hasFrame = true;
+    ++m_captureUploadSerial;
+    m_captureFrameHold.ObserveCompletedUpload(m_captureUploadSerial);
 }
 
 void DX11Renderer::Resize(uint32_t width, uint32_t height)
@@ -1694,9 +1701,9 @@ void DX11Renderer::Resize(uint32_t width, uint32_t height)
     OutputDebugStringW(L"[NitLink/Renderer] Resize: RTV recreated, done\n");
 }
 
-void DX11Renderer::UpdateAspectTransform()
+bool DX11Renderer::UpdateAspectTransform()
 {
-    if (!m_captureWidth || !m_captureHeight || !m_windowWidth || !m_windowHeight) return;
+    if (!m_captureWidth || !m_captureHeight || !m_windowWidth || !m_windowHeight) return false;
 
     float captureAspect = (float)m_captureWidth  / (float)m_captureHeight;
     float windowAspect  = (float)m_windowWidth   / (float)m_windowHeight;
@@ -1718,7 +1725,9 @@ void DX11Renderer::UpdateAspectTransform()
     if (SUCCEEDED(m_context->Map(m_transformCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
         memcpy(mapped.pData, &cb, sizeof(cb));
         m_context->Unmap(m_transformCB.Get(), 0);
+        return true;
     }
+    return false;
 }
 
 bool DX11Renderer::CreateGpuTimingQueries()
@@ -1813,6 +1822,11 @@ void DX11Renderer::WaitForFrameReady()
 
 void DX11Renderer::BeginFrame(bool doWait)
 {
+    m_captureDrawnThisFrame = false;
+    m_heldCaptureDrawnThisFrame = false;
+    m_liveCaptureDrawnThisFrame = false;
+    m_upscaledCaptureCompositedThisFrame = false;
+    m_lastPresentSucceeded = false;
     // ============== DXGI 1.3 LOW-LATENCY WAIT ==============
     // Block until DXGI says "ready for your next frame." If the previous
     // Present is still working its way to the display, this wait holds the
@@ -1904,18 +1918,59 @@ void DX11Renderer::BeginFrame(bool doWait)
     m_context->RSSetViewports(1, &vp);
 }
 
-void DX11Renderer::DrawCaptureFrame()
+CaptureFrameSemantics DX11Renderer::CurrentCaptureFrameSemantics() const
 {
-    if (!m_hasFrame || !m_captureSRV) return;
+    return {m_captureWidth, m_captureHeight, static_cast<std::uint32_t>(m_sourceFormat),
+            m_windowWidth, m_windowHeight, static_cast<std::uint32_t>(m_currentSwapFormat),
+            m_sourceIsHDR10, m_sourceTopDown, m_sourceFullRange, m_p010LimitedChroma,
+            m_hdrEnabled, m_hdrUseBT709Matrix, m_postInputEnabled,
+            m_hdrEnabled ? 0.0f : m_colorExpansionCurrent, m_colorExpansionTarget, m_aspectOverride};
+}
+
+CaptureFrameHoldStatus DX11Renderer::GetResyncFrameStatus() const
+{
+    const bool planar = m_captureFormat != CaptureFormatKind::BGRA;
+    const bool shaderReady = m_captureFormat == CaptureFormatKind::P010 ? !!m_pixelShaderP010 :
+        m_captureFormat == CaptureFormatKind::NV12 ? !!m_pixelShaderNV12 : !!m_pixelShaderBGRA;
+    const bool resourcesReady = !m_deviceLost && m_hasFrame && m_sourceFormatSet &&
+        m_sourceFormat == m_captureFormat &&
+        m_device && m_context && m_rtv && m_captureTexture && m_captureSRV &&
+        (!planar || m_captureSRV_UV) && shaderReady && m_vertexShader && m_vertexBuffer &&
+        m_inputLayout && m_pixelCB && m_transformCB && m_sampler &&
+        m_captureWidth && m_captureHeight && m_windowWidth && m_windowHeight &&
+        (!m_postInputEnabled || (m_postInputRTV && m_postInputSRV && m_compositePS));
+    return m_captureFrameHold.Inspect(
+        resourcesReady, m_captureUploadSerial, CurrentCaptureFrameSemantics());
+}
+
+void DX11Renderer::ForgetResyncFrame(CaptureFrameHoldReason reason)
+{
+    m_captureFrameHold.Invalidate(reason);
+}
+
+void DX11Renderer::InvalidateCaptureFrame()
+{
+    m_hasFrame = false;
+    ForgetResyncFrame(CaptureFrameHoldReason::CaptureSessionInvalidated);
+}
+
+bool DX11Renderer::DrawCaptureFrame(bool heldForSignalResync)
+{
+    if (!m_hasFrame || !m_captureSRV) return false;
+    if (heldForSignalResync && !GetResyncFrameStatus().compatible) return false;
 
     // Smoothly approach the target color-expansion value
-    m_colorExpansionCurrent += (m_colorExpansionTarget - m_colorExpansionCurrent) * 0.22f;
+    // A held raw frame uses its last presented conversion, without advancing
+    // the live-frame animation or changing the user's target/pipeline policy.
+    if (!heldForSignalResync)
+        m_colorExpansionCurrent += (m_colorExpansionTarget - m_colorExpansionCurrent) * 0.22f;
 
     // When HDR is on, force color-expansion off: limited-range expansion
     // would skew the sRGB-to-linear decode.
     const float effectiveColorExp = m_hdrEnabled ? 0.0f : m_colorExpansionCurrent;
 
     D3D11_MAPPED_SUBRESOURCE mapped{};
+    bool captureConstantsUpdated = false;
     if (SUCCEEDED(m_context->Map(m_pixelCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
         float* data = static_cast<float*>(mapped.pData);
         data[0] = effectiveColorExp;
@@ -1948,18 +2003,25 @@ void DX11Renderer::DrawCaptureFrame()
         data[6] = m_p010LimitedChroma ? 1.0f : 0.0f;
         data[7] = 0.0f;
         m_context->Unmap(m_pixelCB.Get(), 0);
+        captureConstantsUpdated = true;
+    }
+    if (heldForSignalResync && !captureConstantsUpdated) {
+        ForgetResyncFrame(CaptureFrameHoldReason::ResourceUnavailable);
+        return false;
     }
 
     // ---- Pick target + transform ----
     // Normal path: draw directly to backbuffer with aspect letterboxing.
     // Upscale path: draw to intermediate at capture-native resolution with
     // identity transform (NIS gets a clean source).
+    bool transformUpdated = false;
     if (m_postInputEnabled && m_postInputRTV) {
         TransformCB identity{ 1.0f, 1.0f };
         D3D11_MAPPED_SUBRESOURCE tm;
         if (SUCCEEDED(m_context->Map(m_transformCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &tm))) {
             memcpy(tm.pData, &identity, sizeof(identity));
             m_context->Unmap(m_transformCB.Get(), 0);
+            transformUpdated = true;
         }
         m_context->OMSetRenderTargets(1, m_postInputRTV.GetAddressOf(), nullptr);
         D3D11_VIEWPORT vp{};
@@ -1968,7 +2030,7 @@ void DX11Renderer::DrawCaptureFrame()
         vp.MaxDepth = 1.0f;
         m_context->RSSetViewports(1, &vp);
     } else {
-        UpdateAspectTransform();
+        transformUpdated = UpdateAspectTransform();
         m_context->OMSetRenderTargets(1, m_rtv.GetAddressOf(), nullptr);
         D3D11_VIEWPORT vp{};
         vp.Width    = (float)m_windowWidth;
@@ -1977,6 +2039,10 @@ void DX11Renderer::DrawCaptureFrame()
         m_context->RSSetViewports(1, &vp);
     }
 
+    if (heldForSignalResync && !transformUpdated) {
+        ForgetResyncFrame(CaptureFrameHoldReason::ResourceUnavailable);
+        return false;
+    }
     m_context->VSSetShader(m_vertexShader.Get(), nullptr, 0);
     m_context->VSSetConstantBuffers(0, 1, m_transformCB.GetAddressOf());
 
@@ -2009,6 +2075,12 @@ void DX11Renderer::DrawCaptureFrame()
     m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
     m_context->Draw(4, 0);
+    m_captureDrawnThisFrame = captureConstantsUpdated && transformUpdated;
+    m_heldCaptureDrawnThisFrame = heldForSignalResync && m_captureDrawnThisFrame;
+    m_liveCaptureDrawnThisFrame = !heldForSignalResync && m_captureDrawnThisFrame;
+    m_drawnCaptureSemantics = CurrentCaptureFrameSemantics();
+    m_drawnCaptureUploadSerial = m_captureUploadSerial;
+    return true;
 }
 
 // Composite the upscaler's output onto the backbuffer using the normal aspect
@@ -2019,6 +2091,7 @@ void DX11Renderer::CompositeUpscaledTexture(ID3D11ShaderResourceView* upscaledSR
 {
     if (!upscaledSRV || !m_compositePS) return;
 
+    bool transformUpdated = false;
     // Aspect transform: pretend the "capture" is now the upscaled output.
     if (srcW && srcH && m_windowWidth && m_windowHeight) {
         float srcAspect = (float)srcW / (float)srcH;
@@ -2037,7 +2110,12 @@ void DX11Renderer::CompositeUpscaledTexture(ID3D11ShaderResourceView* upscaledSR
         if (SUCCEEDED(m_context->Map(m_transformCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
             memcpy(m.pData, &cb, sizeof(cb));
             m_context->Unmap(m_transformCB.Get(), 0);
+            transformUpdated = true;
         }
+    }
+    if (m_heldCaptureDrawnThisFrame && !transformUpdated) {
+        ForgetResyncFrame(CaptureFrameHoldReason::ResourceUnavailable);
+        return;
     }
 
     m_context->OMSetRenderTargets(1, m_rtv.GetAddressOf(), nullptr);
@@ -2064,6 +2142,7 @@ void DX11Renderer::CompositeUpscaledTexture(ID3D11ShaderResourceView* upscaledSR
     // Unbind so the next frame doesn't complain about input/output coupling.
     ID3D11ShaderResourceView* nullSRV = nullptr;
     m_context->PSSetShaderResources(0, 1, &nullSRV);
+    m_upscaledCaptureCompositedThisFrame = transformUpdated;
 }
 
 // HDR overlay compositor. Draws a fullscreen quad textured with the supplied
@@ -2212,6 +2291,13 @@ void DX11Renderer::EndFrame()
     // upgrade surfaces here as DXGI_ERROR_DEVICE_REMOVED/_RESET. Latch it for
     // the run loop instead of presenting into the void forever.
     FlagIfDeviceLost(hrPresent, L"Present");
+    // S_OK, rather than SUCCEEDED, excludes DXGI_STATUS_OCCLUDED. Cached
+    // resync draws/settings/overlays cannot create a new live-frame receipt.
+    m_lastPresentSucceeded = hrPresent == S_OK;
+    m_captureFrameHold.ObservePresent(
+        m_liveCaptureDrawnThisFrame,
+        !m_drawnCaptureSemantics.postInput || m_upscaledCaptureCompositedThisFrame,
+        m_lastPresentSucceeded, m_drawnCaptureUploadSerial, m_drawnCaptureSemantics);
     m_phasePresentMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - presentStart).count();
     m_phasePresents++;
     // Timestamp the present so the VRR present-rate cap (WaitForFrameReady) can pace

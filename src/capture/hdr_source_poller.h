@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include "gc553pro_hdr_source.h"
@@ -83,7 +85,8 @@ public:
     // GC553Pro uses a distinct decoder and retains Unknown until a valid
     // source state remains uncontradicted for the 750 ms settle window.
     void StartGc553Pro(const std::wstring& deviceName,
-                       Gc553ProSourceHdrState initialState);
+                       Gc553ProSourceHdrState initialState,
+                       HdmiSourceVrrState initialVrr = HdmiSourceVrrState::Unknown);
 
     // Signal the worker to exit and join. Idempotent; safe to call
     // multiple times. Called automatically by the destructor.
@@ -101,11 +104,18 @@ public:
     bool AcceptUpdate(bool* outIsHDR10);
     bool AcceptGc553ProUpdate(Gc553ProSourceHdrState* outState);
 
+    // Independent display-only channels. Neither sets the HDR update flag
+    // consumed by capture-format reconciliation.
+    bool AcceptGc553ProTimingUpdate(HdmiSourceTiming* outTiming);
+    bool AcceptGc553ProVrrUpdate(HdmiSourceVrrState* outState);
+
     // For diagnostics / logging only. Returns true when the worker
     // thread is alive (between Start and Stop).
     bool IsRunning() const { return m_running.load(std::memory_order_acquire); }
 
 private:
+    friend struct HDRSourcePollerTestAccess;
+    void ResetSourceMetadata(HdmiSourceVrrState initialVrr);
     // Worker entry point. Loops on m_stop, sleeping for ~1 second
     // between probes. The sleep is broken into 100ms chunks so Stop()
     // doesn't have to wait up to a full second for the worker to
@@ -119,6 +129,13 @@ private:
     std::atomic<bool> m_isHDR10{false};     // last-known source state
     std::atomic<bool> m_hasUpdate{false};   // change since last AcceptUpdate
     std::atomic<Gc553ProSourceHdrState> m_gcState{Gc553ProSourceHdrState::Unknown};
+    std::mutex m_metadataMutex;
+    HdmiSourceTiming m_gcTiming{};
+    HdmiSourceVrrState m_gcVrr = HdmiSourceVrrState::Unknown;
+    bool m_hasTimingUpdate = false;
+    bool m_hasVrrUpdate = false;
+    std::function<std::unique_ptr<Gc553ProSourceReader>(const std::wstring&)>
+        m_gcReaderFactory;
 };
 
 } // namespace NitLink

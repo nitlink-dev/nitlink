@@ -211,11 +211,17 @@ std::optional<SettingsMessage> ParseSettingsMessage(std::wstring_view json) {
             if (f.fpsNumerator) f.fps = f.fpsNumerator / f.fpsDenominator;
         }
     } else {
-        if (!value || !Text(*value, action == L"setPreferredDevice" ? 1024 : 64))
+        if (!value || !Text(*value, action == L"setManualHdmiSourceCustom" ? 4096 :
+                                   action == L"setPreferredDevice" ? 1024 : 64))
             return std::nullopt;
         result.text = value->text;
         if (action == L"setLanguage") {
             if (!OneOf(result.text, {L"system", L"en-US", L"zh-TW"})) return std::nullopt;
+        } else if (action == L"setManualHdmiSource") {
+            if (!IsValidManualHdmiSource(std::wstring_view(result.text))) return std::nullopt;
+        } else if (action == L"setManualHdmiSourceCustom") {
+            if (!NormalizeManualHdmiSourceCustom(std::wstring_view(result.text))) return std::nullopt;
+            result.text = TrimManualHdmiSourceCustom(result.text);
         } else if (action == L"setNoSignalMode") {
             if (!OneOf(result.text, {L"default", L"image"})) return std::nullopt;
         } else if (action == L"setNoSignalFit") {
