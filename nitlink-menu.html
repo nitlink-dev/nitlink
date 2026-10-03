@@ -113,6 +113,7 @@
     main { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); }
     .pane { display: none; max-width: 924px; padding: 18px 0 30px; }
     .pane[data-active="true"] { display: block; }
+    .settings-group { display: contents; }
 
     .band {
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
@@ -290,6 +291,44 @@
       .about-copy { padding: 14px 16px 20px; }
       .toast { max-width: calc(100vw - 24px); }
     }
+
+    /* Full uses the existing state, navigation and controls. Only this mode
+       gets a signal sidebar and section columns; docked rules stay intact. */
+    @media (min-width: 960px) {
+      html[data-side="full"] .content {
+        display: grid;
+        grid-template-columns: clamp(240px, 20vw, 320px) minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr);
+        grid-template-areas: "warning warning" "header header" "signal settings";
+      }
+      html[data-side="full"] #config-warning { grid-area: warning; }
+      html[data-side="full"] .topbar { grid-area: header; }
+      html[data-side="full"] .metabar {
+        grid-area: signal; flex-direction: column; align-items: stretch; gap: 22px;
+        padding: 24px 22px; border-right: 1px solid var(--hair);
+      }
+      html[data-side="full"] .meta { flex-direction: column; align-items: flex-start; gap: 6px; }
+      html[data-side="full"] .meta-value { white-space: normal; overflow-wrap: anywhere; }
+      html[data-side="full"] #source-trigger {
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 8px;
+      }
+      html[data-side="full"] #source-trigger > .meta-label { grid-column: 1 / -1; }
+      html[data-side="full"] #meta-source { max-width: none; }
+      html[data-side="full"] main { grid-area: settings; min-width: 0; }
+      html[data-side="full"] .pane { max-width: none; padding: 22px 22px 30px; }
+      html[data-side="full"] #pane-video[data-active="true"] {
+        display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 22px;
+      }
+      html[data-side="full"] .settings-group { display: block; min-width: 0; }
+      html[data-side="full"] .advanced { grid-column: 1 / -1; }
+      html[data-side="full"] .row-right { justify-content: flex-end; gap: 12px; }
+      html[data-side="full"] .row-chip { text-align: right; }
+    }
+    @media (min-width: 1280px) {
+      html[data-side="full"] #pane-video[data-active="true"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
   </style>
 </head>
 
@@ -363,163 +402,175 @@
       <main>
 
         <section class="pane" id="pane-video" data-active="true">
-          <div class="band">
-            <span class="band-title" data-i18n="section.presentation"></span>
-            <span class="band-hint" data-i18n="section.frameDelivery"></span>
-          </div>
-
-          <div class="row" data-action="toggleLowLatency"
-            data-i18n-title="tooltip.lowLatency">
-            <span class="row-name" data-i18n="row.lowLatency"></span>
-            <div class="row-right">
-              <span class="row-chip" data-i18n="chip.recommended"></span>
-              <div class="toggle" id="toggle-low-latency"></div>
+          <div class="settings-group">
+            <div class="band">
+              <span class="band-title" data-i18n="section.presentation"></span>
+              <span class="band-hint" data-i18n="section.frameDelivery"></span>
             </div>
-          </div>
 
-          <div class="row" data-action="toggleVSync"
-            data-i18n-title="tooltip.vsync">
-            <span class="row-name" data-i18n="row.vsync"></span>
-            <div class="row-right">
-              <div class="toggle" id="toggle-vsync"></div>
+            <div class="row" data-action="toggleLowLatency"
+              data-i18n-title="tooltip.lowLatency">
+              <span class="row-name" data-i18n="row.lowLatency"></span>
+              <div class="row-right">
+                <span class="row-chip" data-i18n="chip.recommended"></span>
+                <div class="toggle" id="toggle-low-latency"></div>
+              </div>
             </div>
-          </div>
 
-          <div class="row" data-action="togglePreventSleep"
-            data-i18n-title="tooltip.preventSleep">
-            <span class="row-name" data-i18n="row.preventSleep"></span>
-            <div class="row-right">
-              <div class="toggle" id="toggle-prevent-sleep"></div>
+            <div class="row" data-action="toggleVSync"
+              data-i18n-title="tooltip.vsync">
+              <span class="row-name" data-i18n="row.vsync"></span>
+              <div class="row-right">
+                <div class="toggle" id="toggle-vsync"></div>
+              </div>
             </div>
-          </div>
 
-          <div class="row" data-action="cyclePresentPacing"
-            data-i18n-title="tooltip.presentPacing">
-            <span class="row-name" data-i18n="row.presentPacing"></span>
-            <div class="row-right">
-              <span class="row-value" id="pacing-val"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div class="row" data-action="togglePreventSleep"
+              data-i18n-title="tooltip.preventSleep">
+              <span class="row-name" data-i18n="row.preventSleep"></span>
+              <div class="row-right">
+                <div class="toggle" id="toggle-prevent-sleep"></div>
+              </div>
             </div>
-          </div>
 
-          <div class="band">
-            <span class="band-title" data-i18n="section.color"></span>
-            <span class="band-hint" data-i18n="section.autoNegotiated"></span>
-          </div>
-
-          <div class="row" data-action="toggleHDR"
-            data-i18n-title="tooltip.hdr10Output">
-            <span class="row-name" data-i18n="row.hdr10Output"></span>
-            <div class="row-right">
-              <span class="row-chip" data-i18n="chip.tenBit"></span>
-              <div class="toggle" id="toggle-hdr"></div>
+            <div class="row" data-action="cyclePresentPacing"
+              data-i18n-title="tooltip.presentPacing">
+              <span class="row-name" data-i18n="row.presentPacing"></span>
+              <div class="row-right">
+                <span class="row-value" id="pacing-val"></span>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
             </div>
-          </div>
 
-          <div class="notice" id="hdr-autodetect-notice" hidden>
-            <span class="notice-tag" data-i18n="notice.note"></span>
-            <span data-i18n="notice.hdrAutoDetect"></span>
           </div>
-
-          <div class="band">
-            <span class="band-title" data-i18n="section.scaling"></span>
-            <span class="band-hint" data-i18n="section.nonNativeWindow"></span>
-          </div>
-
-          <div class="row" data-action="cycleAspect"
-            data-i18n-title="tooltip.aspectRatio">
-            <span class="row-name" data-i18n="row.aspectRatio"></span>
-            <div class="row-right">
-              <span class="row-value" id="aspect-val"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <div class="settings-group">
+            <div class="band">
+              <span class="band-title" data-i18n="section.color"></span>
+              <span class="band-hint" data-i18n="section.autoNegotiated"></span>
             </div>
-          </div>
 
-          <div class="row" data-action="toggleNIS"
-            data-i18n-title="tooltip.nvidiaImageScaling">
-            <span class="row-name" data-i18n="row.nvidiaImageScaling"></span>
-            <div class="row-right">
-              <span class="row-chip" data-i18n="chip.nis"></span>
-              <div class="toggle" id="toggle-nis"></div>
+            <div class="row" data-action="toggleHDR"
+              data-i18n-title="tooltip.hdr10Output">
+              <span class="row-name" data-i18n="row.hdr10Output"></span>
+              <div class="row-right">
+                <span class="row-chip" data-i18n="chip.tenBit"></span>
+                <div class="toggle" id="toggle-hdr"></div>
+              </div>
             </div>
-          </div>
 
-          <div class="band" id="no-signal-section-band">
-            <span class="band-title" data-i18n="section.noSignal"></span>
-            <span class="band-hint" data-i18n="section.noSignalHint"></span>
-          </div>
-          <div class="row" id="no-signal-screen-row" data-action="cycleNoSignalMode">
-            <span class="row-name" data-i18n="row.noSignalScreen"></span>
-            <div class="row-right">
-              <span class="row-value" id="no-signal-mode-val"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div class="notice" id="hdr-autodetect-notice" hidden>
+              <span class="notice-tag" data-i18n="notice.note"></span>
+              <span data-i18n="notice.hdrAutoDetect"></span>
             </div>
-          </div>
-          <div class="row" id="no-signal-image-row" data-action="chooseNoSignalImage"
-            hidden data-i18n-title="tooltip.noSignalImage">
-            <span class="row-name" data-i18n="row.noSignalImage"></span>
-            <div class="row-right">
-              <span class="row-value no-signal-image-name" id="no-signal-image-value"></span>
-              <span class="no-signal-action no-signal-choose" data-i18n="action.choose"></span>
-              <button type="button" class="no-signal-action no-signal-remove" id="no-signal-remove"
-                data-action="clearNoSignalImage" data-i18n="action.removeImage"
-                data-i18n-title="tooltip.removeNoSignalImage" hidden></button>
-            </div>
-          </div>
-          <div class="row" id="no-signal-fit-row" data-action="cycleNoSignalFit"
-            hidden data-i18n-title="tooltip.noSignalFit">
-            <span class="row-name" data-i18n="row.noSignalFit"></span>
-            <div class="row-right">
-              <span class="row-value" id="no-signal-fit-val"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-            </div>
-          </div>
-          <div class="row" id="no-signal-dim-row" data-action="cycleNoSignalDimImage"
-            hidden data-i18n-title="tooltip.noSignalDimImage">
-            <span class="row-name" data-i18n="row.noSignalDimImage"></span>
-            <div class="row-right">
-              <span class="row-value" id="no-signal-dim-val"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-            </div>
-          </div>
 
-          <div class="band">
-            <span class="band-title" data-i18n="section.pictureInPicture"></span>
-            <span class="band-hint" data-i18n="section.altO"></span>
           </div>
-          <div class="row" data-i18n-title="tooltip.opacity">
-            <label class="row-name" for="slider-pip-opacity" data-i18n="row.opacity"></label>
-            <div class="slider-wrap">
-              <input class="slider" id="slider-pip-opacity" type="range" min="10" max="100" step="1" value="90" data-action="setPiPOpacity">
-              <output class="slider-val" id="slider-pip-opacity-val" for="slider-pip-opacity">90%</output>
+          <div class="settings-group">
+            <div class="band">
+              <span class="band-title" data-i18n="section.scaling"></span>
+              <span class="band-hint" data-i18n="section.nonNativeWindow"></span>
             </div>
-          </div>
 
-          <div class="band">
-            <span class="band-title" data-i18n="section.panel"></span>
-            <span class="band-hint" data-i18n="section.thisMenu"></span>
-          </div>
-
-          <div class="row" data-action="cyclePanelSide"
-            data-i18n-title="tooltip.position">
-            <span class="row-name" data-i18n="row.position"></span>
-            <div class="row-right">
-              <span class="row-value" id="panel-side-val"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div class="row" data-action="cycleAspect"
+              data-i18n-title="tooltip.aspectRatio">
+              <span class="row-name" data-i18n="row.aspectRatio"></span>
+              <div class="row-right">
+                <span class="row-value" id="aspect-val"></span>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
             </div>
-          </div>
 
-          <div class="row">
-            <label class="row-name" for="language-select" data-i18n="language.label"></label>
-            <div class="row-right">
-              <select class="language-select" id="language-select">
-                <option value="system" data-i18n="language.system"></option>
-                <option value="en-US" data-i18n="language.english"></option>
-                <option value="zh-TW" data-i18n="language.traditionalChinese"></option>
-              </select>
+            <div class="row" data-action="toggleNIS"
+              data-i18n-title="tooltip.nvidiaImageScaling">
+              <span class="row-name" data-i18n="row.nvidiaImageScaling"></span>
+              <div class="row-right">
+                <span class="row-chip" data-i18n="chip.nis"></span>
+                <div class="toggle" id="toggle-nis"></div>
+              </div>
             </div>
-          </div>
 
+          </div>
+          <div class="settings-group">
+            <div class="band" id="no-signal-section-band">
+              <span class="band-title" data-i18n="section.noSignal"></span>
+              <span class="band-hint" data-i18n="section.noSignalHint"></span>
+            </div>
+            <div class="row" id="no-signal-screen-row" data-action="cycleNoSignalMode">
+              <span class="row-name" data-i18n="row.noSignalScreen"></span>
+              <div class="row-right">
+                <span class="row-value" id="no-signal-mode-val"></span>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+            </div>
+            <div class="row" id="no-signal-image-row" data-action="chooseNoSignalImage"
+              hidden data-i18n-title="tooltip.noSignalImage">
+              <span class="row-name" data-i18n="row.noSignalImage"></span>
+              <div class="row-right">
+                <span class="row-value no-signal-image-name" id="no-signal-image-value"></span>
+                <span class="no-signal-action no-signal-choose" data-i18n="action.choose"></span>
+                <button type="button" class="no-signal-action no-signal-remove" id="no-signal-remove"
+                  data-action="clearNoSignalImage" data-i18n="action.removeImage"
+                  data-i18n-title="tooltip.removeNoSignalImage" hidden></button>
+              </div>
+            </div>
+            <div class="row" id="no-signal-fit-row" data-action="cycleNoSignalFit"
+              hidden data-i18n-title="tooltip.noSignalFit">
+              <span class="row-name" data-i18n="row.noSignalFit"></span>
+              <div class="row-right">
+                <span class="row-value" id="no-signal-fit-val"></span>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+            </div>
+            <div class="row" id="no-signal-dim-row" data-action="cycleNoSignalDimImage"
+              hidden data-i18n-title="tooltip.noSignalDimImage">
+              <span class="row-name" data-i18n="row.noSignalDimImage"></span>
+              <div class="row-right">
+                <span class="row-value" id="no-signal-dim-val"></span>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+            </div>
+
+          </div>
+          <div class="settings-group">
+            <div class="band">
+              <span class="band-title" data-i18n="section.pictureInPicture"></span>
+              <span class="band-hint" data-i18n="section.altO"></span>
+            </div>
+            <div class="row" data-i18n-title="tooltip.opacity">
+              <label class="row-name" for="slider-pip-opacity" data-i18n="row.opacity"></label>
+              <div class="slider-wrap">
+                <input class="slider" id="slider-pip-opacity" type="range" min="10" max="100" step="1" value="90" data-action="setPiPOpacity">
+                <output class="slider-val" id="slider-pip-opacity-val" for="slider-pip-opacity">90%</output>
+              </div>
+            </div>
+
+          </div>
+          <div class="settings-group">
+            <div class="band">
+              <span class="band-title" data-i18n="section.panel"></span>
+              <span class="band-hint" data-i18n="section.thisMenu"></span>
+            </div>
+
+            <div class="row" data-action="cyclePanelSide"
+              data-i18n-title="tooltip.position">
+              <span class="row-name" data-i18n="row.position"></span>
+              <div class="row-right">
+                <span class="row-value" id="panel-side-val"></span>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="chevron" aria-hidden="true"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+            </div>
+
+            <div class="row">
+              <label class="row-name" for="language-select" data-i18n="language.label"></label>
+              <div class="row-right">
+                <select class="language-select" id="language-select">
+                  <option value="system" data-i18n="language.system"></option>
+                  <option value="en-US" data-i18n="language.english"></option>
+                  <option value="zh-TW" data-i18n="language.traditionalChinese"></option>
+                </select>
+              </div>
+            </div>
+
+          </div>
           <details class="advanced" id="color-expansion-advanced" hidden>
             <summary class="band">
               <span class="band-title" data-i18n="section.advanced"></span>

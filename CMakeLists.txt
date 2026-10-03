@@ -216,6 +216,20 @@ if(BUILD_TESTING)
         add_dependencies(NitLinkWebViewRuntimeTests NitLinkRuntimeResources)
         add_test(NAME webview_runtime_security COMMAND NitLinkWebViewRuntimeTests)
         set_tests_properties(webview_runtime_security PROPERTIES TIMEOUT 60)
+        add_executable(NitLinkSettingsLayoutTests
+            tests/settings_layout_tests.cpp
+            src/app/WebViewSettings.cpp
+            src/app/settings_message.cpp
+            src/app/game_database.cpp
+        )
+        target_include_directories(NitLinkSettingsLayoutTests PRIVATE
+            ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/third_party
+            ${CMAKE_SOURCE_DIR}/third_party/webview2/include)
+        target_link_libraries(NitLinkSettingsLayoutTests PRIVATE ole32 oleaut32 shlwapi
+            ${CMAKE_SOURCE_DIR}/third_party/webview2/lib/x64/WebView2LoaderStatic.lib)
+        add_dependencies(NitLinkSettingsLayoutTests NitLinkRuntimeResources)
+        add_test(NAME webview_settings_layout COMMAND NitLinkSettingsLayoutTests)
+        set_tests_properties(webview_settings_layout PROPERTIES TIMEOUT 60)
         add_test(NAME webview_missing_assets
             COMMAND ${CMAKE_COMMAND}
                 "-DTEST_EXE=$<TARGET_FILE:NitLinkWebViewRuntimeTests>"
