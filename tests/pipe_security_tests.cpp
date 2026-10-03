@@ -1,5 +1,7 @@
 #include "discord/pipe_transport.h"
 #include "discord/discord_rpc.h"
+#include "app/hdmi_source.h"
+#include "app/hdmi_source_presence.h"
 #include <utility>
 #include <atomic>
 #include <chrono>
@@ -55,6 +57,64 @@ static std::string ReceiveServerFrame(Pipe& pipe, uint32_t expectedOp) {
     std::string payload(header[1], '\0');
     Check(ReadFile(pipe.server, payload.data(), header[1], &got, nullptr) && got == header[1], "server frame body");
     return payload;
+}
+static void SourcePresenceTest() {
+    using namespace std::chrono;
+    Pipe pipe;
+    DiscordRPC rpc;
+    DiscordRPCTestAccess::SetOpener(rpc, [&] { return std::exchange(pipe.client, INVALID_HANDLE_VALUE); });
+    const uint8_t reply[] = {1,0,0,0,2,0,0,0,'{','}'};
+    pipe.Send(reply, sizeof(reply));
+    Check(rpc.Connect("12345"), "source presence handshake");
+    ReceiveServerFrame(pipe, 0);
+    const auto started = system_clock::time_point{seconds(1700000000)};
+    const auto later = started + minutes(5);
+    auto activityStart = NitLink::HdmiSourceActivityStartTime({}, false, started);
+    const auto source = NitLink::GetEffectiveHdmiSourceLabel("switch2", L"Detected PS5", L"SPD");
+    rpc.SetActivity(std::wstring(source), L"Capture Viewer", activityStart, "nitlink-logo", L"NitLink");
+    auto payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"details\":\"Switch 2\"") != std::string::npos &&
+          payload.find("\"state\":\"Capture Viewer\"") != std::string::npos &&
+          payload.find("In NitLink") == std::string::npos &&
+          payload.find("PS5 Capture Viewer") == std::string::npos,
+          "viewer RPC shows shared effective identity using unchanged string serialization");
+    Check(payload.find("nitlink-logo") != std::string::npos &&
+          payload.find("1700000000") != std::string::npos, "viewer art and activity start retained");
+
+    pipe.Send(reply, sizeof(reply));
+    activityStart = NitLink::HdmiSourceActivityStartTime(activityStart, true, later);
+    const auto custom = NitLink::GetEffectiveHdmiSourceLabel("other", {}, {}, L"Steam Deck");
+    rpc.SetActivity(std::wstring(custom), L"Capture Viewer", activityStart, "nitlink-logo", L"NitLink");
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"details\":\"Steam Deck\"") != std::string::npos &&
+          payload.find("1700000000") != std::string::npos &&
+          payload.find("1700000300") == std::string::npos,
+          "custom identity refresh retains original activity start");
+
+    pipe.Send(reply, sizeof(reply));
+    activityStart = NitLink::HdmiSourceActivityStartTime(activityStart, false, later);
+    rpc.SetActivity(L"Spider-Man 2", std::wstring(custom), activityStart,
+                    "spider-man-2", L"Spider-Man 2");
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"details\":\"Spider-Man 2\"") != std::string::npos &&
+          payload.find("\"state\":\"Steam Deck\"") != std::string::npos &&
+          payload.find("\"large_image\":\"spider-man-2\"") != std::string::npos &&
+          payload.find("1700000300") != std::string::npos,
+          "game selection retains title/art and starts a new activity");
+
+    pipe.Send(reply, sizeof(reply));
+    activityStart = NitLink::HdmiSourceActivityStartTime(activityStart, true, later + minutes(5));
+    const auto automatic = NitLink::GetEffectiveHdmiSourceLabel("auto", L"Detected PS5", L"SPD");
+    rpc.SetActivity(L"Spider-Man 2", std::wstring(automatic), activityStart,
+                    "spider-man-2", L"Spider-Man 2");
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"state\":\"Detected PS5\"") != std::string::npos &&
+          payload.find("\"details\":\"Spider-Man 2\"") != std::string::npos &&
+          payload.find("spider-man-2") != std::string::npos &&
+          payload.find("1700000300") != std::string::npos,
+          "Auto identity refresh restores detection without resetting game art or activity time");
+    pipe.Send(reply, sizeof(reply));
+    rpc.Disconnect();
 }
 static void ReconnectTest(bool updateWhileDisconnected) {
     Pipe first, second;
@@ -213,6 +273,7 @@ int main() {
           const bool reverted = RevertToSelf() != FALSE;
           Check(reverted && inspected && level == SecurityIdentification, "server cannot use client impersonation token"); }
         IncrementalReaderTest();
+        SourcePresenceTest();
         SlowReplyTest();
         ReconnectTest(false);
         ReconnectTest(true);

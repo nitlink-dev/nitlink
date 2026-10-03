@@ -23,6 +23,8 @@ set(NITLINK_SOURCES
     src/app/application.h
     src/app/config.cpp
     src/app/config.h
+    src/app/hdmi_source.h
+    src/app/hdmi_source_presence.h
     src/app/localization.cpp
     src/app/localization.h
     src/app/game_database.cpp
@@ -377,4 +379,9 @@ if(BUILD_TESTING)
     target_include_directories(NitLinkGc553ProHdrTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(NitLinkGc553ProHdrTests PRIVATE ole32 oleaut32 strmiids)
     add_test(NAME gc553pro_hdr_source COMMAND NitLinkGc553ProHdrTests)
+
+    add_executable(NitLinkManualHdmiSourceTests tests/manual_hdmi_source_tests.cpp
+        src/app/config.cpp src/app/settings_message.cpp src/app/game_database.cpp)
+    target_include_directories(NitLinkManualHdmiSourceTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME manual_hdmi_source COMMAND NitLinkManualHdmiSourceTests)
 endif()

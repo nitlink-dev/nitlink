@@ -62,6 +62,7 @@ private:
     // and from ReconcileCaptureFormat after a force-reopen re-probe
     // updates m_sourceIsHDR10.
     void UpdateWindowTitle();
+    std::wstring GetEffectiveHdmiSourceLabel() const;
 
     // Push current config + live stats to the WebView2 settings UI so its
     // toggles/sliders/labels reflect reality. Called on open, on hotkey-
@@ -75,7 +76,7 @@ private:
     // the renderer. UpdateDiscordForCurrentGame pushes the current game's
     // title/art-key to Rich Presence (or clears it when gameId is empty).
     void ApplyGameSettings(const std::string& gameId);
-    void UpdateDiscordForCurrentGame();
+    void UpdateDiscordForCurrentGame(bool preserveStartTime = false);
 
     // Capture-side HDR/SDR reconciliation. Compares the format the capture
     // device is currently running (P010 vs BGRA/NV12) against what the
@@ -261,6 +262,7 @@ private:
     bool m_settingsVisible = false;
     std::unique_ptr<Config>           m_config;
     std::unique_ptr<DiscordRPC>       m_discord;
+    std::chrono::system_clock::time_point m_discordActivityStart{};
 
     // Background-thread monitor for HDMI source HDR<->SDR transitions.
     // Created in Initialize iff the Elgato HDR property GUID is readable

@@ -107,6 +107,7 @@
     .meta-label { color: var(--ink3); font-size: 12px; }
     .meta-value { color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
     #source-trigger { position: relative; flex: none; cursor: pointer; }
+    #hdmi-source-picker { flex: none; }
     #meta-source { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
     .chevron { flex: none; color: var(--ink2); }
 
@@ -198,7 +199,7 @@
       color: var(--accent);
     }
 
-    /* Source picker popover: device list plus the manual capture-format cascade. */
+    /* Source picker: HDMI identity, device list and capture-format cascade. */
     .source-popover {
       position: absolute; top: calc(100% + 2px); left: 0; z-index: 30; width: 320px; display: none;
       flex-direction: column; max-height: 340px; overflow-y: auto; padding: 4px 0;
@@ -217,6 +218,21 @@
     .source-popover-item[data-active="true"] { color: var(--ink); }
     .source-popover-bullet { width: 6px; height: 6px; border-radius: 50%; flex: none; background: #5F5F5F; }
     .source-popover-item[data-active="true"] .source-popover-bullet { background: var(--accent); }
+    #hdmi-source-custom-editor { display: flex; flex-direction: column; gap: 10px; padding: 10px 14px; }
+    #hdmi-source-custom-editor[hidden] { display: none; }
+    #hdmi-source-custom-editor label { color: var(--ink2); font-size: 12px; }
+    #hdmi-source-custom-input {
+      width: 100%; min-width: 0; padding: 7px 8px; color: var(--ink); background: #202020;
+      border: 1px solid var(--hair2); border-radius: 0; font: 12.5px var(--sans); outline: none;
+    }
+    #hdmi-source-custom-input:focus { border-color: var(--accent); }
+    .hdmi-source-custom-actions { display: flex; gap: 10px; }
+    .hdmi-source-custom-actions button {
+      padding: 6px 10px; color: var(--ink); background: #202020; border: 1px solid var(--hair2);
+      font: 12px var(--sans); cursor: pointer;
+    }
+    .hdmi-source-custom-actions button:hover { border-color: var(--accent); }
+    #hdmi-source-custom-error { color: var(--warn); font-size: 11px; line-height: 1.5; }
     .source-popover-name {
       flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px;
     }
@@ -235,6 +251,8 @@
     .source-popover-select:focus { border-color: var(--accent); }
     .source-popover-select:disabled { opacity: 0.45; cursor: not-allowed; }
     .source-popover-select:disabled:hover { border-color: var(--hair2); }
+    #hdmi-source-custom-row[hidden] { display: none; }
+    #hdmi-source-custom-edit { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .language-select {
       min-width: 0; max-width: 180px; color: var(--ink); background: #202020;
       border: 1px solid var(--hair2); border-radius: 0; padding: 6px 8px;
@@ -340,7 +358,27 @@
           <span class="meta-label" data-i18n="meta.source"></span>
           <span class="meta-value" id="meta-source" data-i18n="meta.none"></span>
           <svg class="chevron" width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-          <div class="source-popover" id="source-popover"></div>
+          <div class="source-popover" id="source-popover">
+            <div id="hdmi-source-picker">
+              <div class="source-popover-select-row">
+                <label id="hdmi-source-label" for="hdmi-source-trigger" data-i18n="meta.hdmiSource"></label>
+                <select class="source-popover-select" id="hdmi-source-trigger" data-i18n-title="meta.hdmiSourceInfo"></select>
+              </div>
+              <div class="source-popover-select-row" id="hdmi-source-custom-row" hidden>
+                <label for="hdmi-source-custom-edit" data-i18n="hdmiSource.customNameShort"></label>
+                <button type="button" class="source-popover-select" id="hdmi-source-custom-edit" data-i18n-title="hdmiSource.editName"><span id="meta-hdmi-source"></span></button>
+              </div>
+              <div id="hdmi-source-custom-editor" hidden>
+                <label for="hdmi-source-custom-input" data-i18n="hdmiSource.customName"></label>
+                <input id="hdmi-source-custom-input" type="text" maxlength="256" autocomplete="off" spellcheck="false" aria-describedby="hdmi-source-custom-error">
+                <span id="hdmi-source-custom-error" role="alert" data-i18n="hdmiSource.invalidCustom" hidden></span>
+                <div class="hdmi-source-custom-actions">
+                  <button id="hdmi-source-custom-save" type="button" data-i18n="hdmiSource.save"></button>
+                  <button id="hdmi-source-custom-cancel" type="button" data-i18n="hdmiSource.cancel"></button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="meta">
           <span class="meta-label" data-i18n="meta.signal"></span>

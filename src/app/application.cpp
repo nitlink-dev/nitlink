@@ -3,6 +3,7 @@
 #include "capture_device_names.h"
 #include "WebViewSettings.h"
 #include "settings_message.h"
+#include "hdmi_source_presence.h"
 #include "webview_policy.h"
 #include "game_database.h"
 #include "localization.h"
@@ -1214,6 +1215,25 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
             }
             return;
         }
+        if (action == L"setManualHdmiSource" && m_config) {
+            // Validate before narrowing; identity updates never touch capture,
+            // renderer, automatic detector state, or HDR policy.
+            if (!IsValidManualHdmiSource(std::wstring_view(message->text))) return;
+            std::string requested;
+            for (wchar_t c : message->text) requested.push_back(static_cast<char>(c));
+            if (!m_config->SetManualHdmiSource(requested)) return;
+            m_config->Save("nitlink.json");
+            UpdateWindowTitle();
+            PushSettingsState();
+            return;
+        }
+        if (action == L"setManualHdmiSourceCustom" && m_config) {
+            if (!m_config->SetManualHdmiSourceCustom(std::wstring_view(message->text))) return;
+            m_config->Save("nitlink.json");
+            UpdateWindowTitle();
+            PushSettingsState();
+            return;
+        }
         if (action == L"setNoSignalMode" && m_config) {
             const std::wstring requested = message->text;
             if (requested == L"default" || requested == L"image") {
@@ -1491,15 +1511,7 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     m_discord = std::make_unique<DiscordRPC>();
     if (m_discord->Connect("1505211372286246944")) {
         AppLog(L"Initialize: Discord RPC connected");
-        // Set initial "idle" presence. This will be overwritten the moment
-        // the user selects a game from the settings menu.
-        m_discord->SetActivity(
-            L"In NitLink",
-            L"PS5 Capture Viewer",
-            std::chrono::system_clock::now(),
-            "nitlink-logo",
-            L"NitLink"
-        );
+        UpdateDiscordForCurrentGame();
     } else {
         AppLog(L"Initialize: Discord RPC unavailable (Discord not running or RPC disabled)");
     }
@@ -4892,6 +4904,20 @@ void Application::PushSettingsState(bool refreshCaptureDevices)
     const std::wstring languagePreference(m_config->language.begin(), m_config->language.end());
     js << L"\"languagePreference\":\"" << languagePreference << L"\",";
     js << L"\"locale\":\"" << Localization::Instance().LocaleName() << L"\",";
+    js << L"\"manualHdmiSource\":\""
+       << Utf8ToWide(std::string(NormalizeManualHdmiSource(m_config->manualHdmiSource))) << L"\",";
+    js << L"\"manualHdmiSourceCustom\":\""
+       << JsonEscapeWide(Utf8ToWide(m_config->manualHdmiSourceCustom)) << L"\",";
+    js << L"\"effectiveHdmiSource\":\""
+       << JsonEscapeWide(GetEffectiveHdmiSourceLabel()) << L"\",";
+    js << L"\"manualHdmiSourceOptions\":[";
+    for (size_t i = 0; i < kManualHdmiSources.size(); ++i) {
+        if (i) js << L",";
+        const auto& [value, label] = kManualHdmiSources[i];
+        js << L"{\"value\":\"" << std::wstring(value.begin(), value.end())
+           << L"\",\"label\":\"" << JsonEscapeWide(std::wstring(label)) << L"\"}";
+    }
+    js << L"],";
     js << L"\"hdrEnabled\":"        << (m_config->hdrEnabled        ? L"true" : L"false") << L",";
     js << L"\"hdrAutoDetectAvailable\":" << (m_hdrDetectionAvailable ? L"true" : L"false") << L",";
     // GC553Pro source detection remains a supported device capability while
@@ -5142,16 +5168,20 @@ void Application::ApplyGameSettings(const std::string& gameId)
     }
 }
 
-void Application::UpdateDiscordForCurrentGame()
+void Application::UpdateDiscordForCurrentGame(bool preserveStartTime)
 {
     if (!m_discord || !m_config) return;
 
+    m_discordActivityStart = HdmiSourceActivityStartTime(
+        m_discordActivityStart, preserveStartTime, std::chrono::system_clock::now());
+    const auto sourceLabel = GetEffectiveHdmiSourceLabel();
+
     if (m_config->currentGameId.empty()) {
-        // No game: back to idle presence
+        // Discord supplies the application name; viewer details show HDMI identity.
         m_discord->SetActivity(
-            L"In NitLink",
-            L"PS5 Capture Viewer",
-            std::chrono::system_clock::now(),
+            sourceLabel.empty() ? L"In NitLink" : sourceLabel,
+            L"Capture Viewer",
+            m_discordActivityStart,
             "nitlink-logo",
             L"NitLink"
         );
@@ -5175,8 +5205,8 @@ void Application::UpdateDiscordForCurrentGame()
     // back to no image: the text still shows fine.
     m_discord->SetActivity(
         title,                                      // "Spider-Man 2"
-        L"Playing on PS5",                          // state line under title
-        std::chrono::system_clock::now(),           // restart elapsed timer
+        sourceLabel.empty() ? L"Playing" : sourceLabel, // effective HDMI source identity
+        m_discordActivityStart,                     // resets on game selection only
         m_config->currentGameId,                    // large image asset key
         title                                       // tooltip when hovering image
     );
@@ -5287,19 +5317,9 @@ void Application::UpdateWindowTitle()
 
     std::wstring title = L"NitLink";
 
-    // Source identifier segment. Currently populated on the 4K S path
-    // (Detect4KSHdmiSource decodes the HDMI Source Product Descriptor
-    // InfoFrame). Empty on the 4K Pro until a source-identifier
-    // mechanism is found on that device.
-    if (!m_detectedHdmiSource.empty()) {
-        title += L" - ";
-        title += m_detectedHdmiSource;
-    } else if (!m_source4KProMode.sourceName.empty()) {
-        // 4K X: source product string decoded from the XU SPD InfoFrame
-        // (Detect4KXSourceMode), e.g. "PS5". Same slot as the 4K S identifier.
-        title += L" - ";
-        title += m_source4KProMode.sourceName;
-    }
+    // Identity override is display-only; automatic detectors remain untouched.
+    const auto sourceLabel = GetEffectiveHdmiSourceLabel();
+    if (!sourceLabel.empty()) title += L" - " + sourceLabel;
 
     // Source resolution + fps segment. Currently populated on the 4K
     // Pro path (Detect4KProSourceMode reads the Elgato custom property
@@ -5344,6 +5364,15 @@ void Application::UpdateWindowTitle()
     }
 
     m_window->SetTitle(title);
+    UpdateDiscordForCurrentGame(/*preserveStartTime=*/ true);
+}
+
+std::wstring Application::GetEffectiveHdmiSourceLabel() const
+{
+    return std::wstring(NitLink::GetEffectiveHdmiSourceLabel(
+        m_config ? std::string_view(m_config->manualHdmiSource) : "auto",
+        m_detectedHdmiSource, m_source4KProMode.sourceName,
+        m_config ? Utf8ToWide(m_config->manualHdmiSourceCustom) : std::wstring{}));
 }
 
 } // namespace NitLink
