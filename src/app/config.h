@@ -1,5 +1,7 @@
 #pragma once
 
+#include "hdmi_source.h"
+
 #include <map>
 #include <string>
 #include <cstdint>
@@ -81,6 +83,28 @@ struct Config {
 
     // Capture
     std::wstring preferredDevice = L""; // Empty = first available
+
+    // Global identity of the device connected to HDMI IN, independent of
+    // the capture card, per-device format overrides, and HDR signal state.
+    std::string manualHdmiSource = "auto";
+    std::string manualHdmiSourceCustom;
+    bool SetManualHdmiSource(std::string_view value) {
+        if (!IsValidManualHdmiSource(value)) return false;
+        manualHdmiSource = value;
+        return true;
+    }
+    bool SetManualHdmiSourceCustom(std::string_view value) {
+        const auto normalized = NormalizeManualHdmiSourceCustom(value);
+        if (!normalized) return false;
+        manualHdmiSourceCustom = *normalized;
+        return true;
+    }
+    bool SetManualHdmiSourceCustom(std::wstring_view value) {
+        const auto normalized = NormalizeManualHdmiSourceCustom(value);
+        if (!normalized) return false;
+        manualHdmiSourceCustom = *normalized;
+        return true;
+    }
 
     // Manual capture format overrides, keyed by capture device name.
     // Each card remembers its own pick (4K Pro at 4K, 4K S at 1080p+240,

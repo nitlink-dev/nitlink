@@ -292,6 +292,8 @@ bool Config::Load(const std::string& path)
     const bool exists = std::filesystem::exists(path, ec);
     if (ec) return failed();
     if (!exists) {
+        manualHdmiSource = "auto";
+        manualHdmiSourceCustom.clear();
         m_loadFailed = false;
         m_loadIssue = LoadIssue::None;
         if (Save(path)) return true;
@@ -315,6 +317,9 @@ bool Config::Load(const std::string& path)
         else if (++lineSize > kMaxConfigLine) return failed();
     }
     std::istringstream file(contents);
+    // Older files also restore Auto when this Config instance is reused.
+    manualHdmiSource = "auto";
+    manualHdmiSourceCustom.clear();
 
     // Pre-loop accumulators for capture-format override parsing. Two
     // schemas are accepted: the legacy flat keys from rc2 (one anonymous
@@ -372,6 +377,10 @@ bool Config::Load(const std::string& path)
         if (key == "language") {
             if (val == "system" || val == "en-US" || val == "zh-TW") language = val;
         }
+        if (key == "manual_hdmi_source")
+            manualHdmiSource = NormalizeManualHdmiSource(val);
+        if (key == "manual_hdmi_source_custom")
+            manualHdmiSourceCustom = NormalizeManualHdmiSourceCustom(val).value_or("");
         if (key == "pip_width")       pipWidth     = ParseU32(val, pipWidth, 80, 16384);
         if (key == "pip_height")      pipHeight    = ParseU32(val, pipHeight, 45, 16384);
         if (key == "pip_opacity")     pipOpacity   = ParseFloatClamped(val, pipOpacity, 0.0f, 1.0f);
@@ -590,6 +599,13 @@ bool Config::Save(const std::string& path)
     file << "# Empty falls back to the first Elgato device when present, otherwise to\n";
     file << "# the first device Media Foundation enumerates.\n";
     file << "preferred_device = " << preferredUtf8 << "\n\n";
+
+    file << "# HDMI IN source identity only; does not change capture or HDR policy.\n";
+    file << "# auto | ps5 | ps4 | switch2 | switch | xbox_series | xbox_one | pc | other\n";
+    file << "manual_hdmi_source = " << NormalizeManualHdmiSource(manualHdmiSource) << "\n";
+    file << "# Custom name for Other, at most 64 Unicode characters, no control characters.\n";
+    file << "manual_hdmi_source_custom = "
+         << NormalizeManualHdmiSourceCustom(manualHdmiSourceCustom).value_or("") << "\n\n";
 
     file << "# Capture format overrides (per device, F1 Source picker)\n";
     file << "# Schema: capture_override.<N>.<field> = <value>\n";
