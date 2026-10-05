@@ -199,4 +199,21 @@ Gc553ProHdrProbe Gc553ProHdrReader::Read() {
     return decoded;
 }
 
+HdmiSourceTiming Gc553ProHdrReader::ReadTiming() {
+    if (!m_impl || !m_impl->ready) return {};
+    constexpr std::array<uint8_t, 9> request{
+        0xA1,0x06,0x00,0x00,0x37,0x00,0x00,0x00,0x22};
+    std::vector<uint8_t> response;
+    if (!Mailbox(m_impl->control, m_impl->node, request, response)) return {};
+    return DecodeGc553ProTimingResponse(response.data(), response.size());
+}
+
+HdmiSourceVrrState Gc553ProHdrReader::ReadVrr() {
+    if (!m_impl || !m_impl->ready) return HdmiSourceVrrState::Unknown;
+    std::vector<uint8_t> response;
+    if (!Mailbox(m_impl->control, m_impl->node, kGc553ProVtemRequest, response))
+        return HdmiSourceVrrState::Unknown;
+    return DecodeGc553ProSourceVrr(DecodeGc553ProVtemResponse(response.data(), response.size()));
+}
+
 } // namespace NitLink

@@ -1,5 +1,8 @@
 #pragma once
 
+#include "hdmi_raw_timing.h"
+#include "gc553pro_vtem.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -76,15 +79,27 @@ private:
 Gc553ProHdrProbe DecodeGc553ProHdrResponse(const uint8_t* data,
                                               size_t size) noexcept;
 
+// Worker-owned source reader. Tests substitute a hardware-free implementation;
+// production uses the same serialized XU owner for HDR/timing/VRR.
+class Gc553ProSourceReader {
+public:
+    virtual ~Gc553ProSourceReader() = default;
+    virtual Gc553ProHdrProbe Read() = 0;
+    virtual HdmiSourceTiming ReadTiming() = 0;
+    virtual HdmiSourceVrrState ReadVrr() = 0;
+};
+
 // Create/use/destroy on the same thread. Keeps the DirectShow filter open
 // between polls; COM references are released before CoUninitialize.
-class Gc553ProHdrReader {
+class Gc553ProHdrReader : public Gc553ProSourceReader {
 public:
     explicit Gc553ProHdrReader(const std::wstring& deviceName);
-    ~Gc553ProHdrReader();
+    ~Gc553ProHdrReader() override;
     Gc553ProHdrReader(const Gc553ProHdrReader&) = delete;
     Gc553ProHdrReader& operator=(const Gc553ProHdrReader&) = delete;
-    Gc553ProHdrProbe Read();
+    Gc553ProHdrProbe Read() override;
+    HdmiSourceTiming ReadTiming() override;
+    HdmiSourceVrrState ReadVrr() override;
 
 private:
     struct Impl;

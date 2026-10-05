@@ -891,6 +891,11 @@ void Overlay::DrawStatusMessage(uint32_t windowW, uint32_t windowH,
         return;
     }
 
+    // A translucent status overlay must start from transparent on the retained
+    // HDR UI surface; otherwise old opaque status/No Signal pixels accumulate.
+    // SDR draws directly over this iteration's freshly rendered capture image.
+    if (m_offscreenInUse && backgroundOpacity < 1.0f)
+        m_d2dContext->Clear(D2D1::ColorF(0, 0, 0, 0));
     m_d2dContext->FillRectangle(D2D1::RectF(0.0f, 0.0f, w, h), background.Get());
     const std::wstring message = Tr(localizationKey);
     m_textFormatBig->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);

@@ -14,7 +14,23 @@ enum class PresentationState {
     Capture,
     NoSignal,
     Transition,
+    SignalResync,
 };
+
+// Existing no-valid-frame reacquire debounce, reused only as an eligible
+// backend's fallback. A known capture transition need not wait for this timer.
+inline constexpr std::int64_t kCaptureReacquireDebounceMs = 250;
+
+constexpr bool ShouldShowSignalResync(bool frameGapFallbackEligible,
+                                      bool hadStableCapture,
+                                      bool noSignalPresentation,
+                                      std::int64_t elapsedWithoutValidFrameMs,
+                                      bool captureTransitionActive = false) noexcept
+{
+    return hadStableCapture && !noSignalPresentation &&
+        (captureTransitionActive || (frameGapFallbackEligible &&
+         elapsedWithoutValidFrameMs >= kCaptureReacquireDebounceMs));
+}
 
 // A classified Real frame is not presentable until the renderer has accepted
 // it into the current GPU capture texture. This prevents the render loop from
@@ -29,12 +45,25 @@ constexpr bool CapturePresentationReady(bool acceptedReal,
 constexpr PresentationState DecidePresentation(bool noSignalLatched,
                                                 bool showNoSignalNow,
                                                 bool captureReady,
-                                                bool transitionActive) noexcept
+                                                bool transitionActive,
+                                                bool signalResync = false) noexcept
 {
     if (noSignalLatched || showNoSignalNow) return PresentationState::NoSignal;
+    if (signalResync) return PresentationState::SignalResync;
     if (transitionActive) return PresentationState::Transition;
     if (captureReady) return PresentationState::Capture;
     return PresentationState::WaitingForCapture;
+}
+
+// The same localized presentation is used by SDR and HDR render paths.
+// Startup format-reopen waits do not claim that a stable source was lost.
+constexpr const wchar_t* CaptureStatusLocalizationKey(PresentationState state,
+                                                       bool captureStarted) noexcept
+{
+    if (state == PresentationState::SignalResync) return L"overlay.resyncingSignal";
+    if (state == PresentationState::WaitingForCapture || state == PresentationState::Transition)
+        return captureStarted ? L"overlay.waitingForSource" : L"overlay.initializingCapture";
+    return nullptr; // Capture and NoSignal have their own rendering.
 }
 
 // A zero-zone GC553Pro frame can be legal FULL-range black content. Keep it

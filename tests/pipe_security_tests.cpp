@@ -1,5 +1,7 @@
 #include "discord/pipe_transport.h"
 #include "discord/discord_rpc.h"
+#include "app/hdmi_source.h"
+#include "app/hdmi_source_display.h"
 #include <utility>
 #include <atomic>
 #include <chrono>
@@ -55,6 +57,58 @@ static std::string ReceiveServerFrame(Pipe& pipe, uint32_t expectedOp) {
     std::string payload(header[1], '\0');
     Check(ReadFile(pipe.server, payload.data(), header[1], &got, nullptr) && got == header[1], "server frame body");
     return payload;
+}
+static void SourcePresenceTest() {
+    Pipe pipe;
+    DiscordRPC rpc;
+    DiscordRPCTestAccess::SetOpener(rpc, [&] { return std::exchange(pipe.client, INVALID_HANDLE_VALUE); });
+    const uint8_t reply[] = {1,0,0,0,2,0,0,0,'{','}'};
+    pipe.Send(reply, sizeof(reply));
+    Check(rpc.Connect("12345"), "source presence handshake");
+    ReceiveServerFrame(pipe, 0);
+    const auto started = std::chrono::system_clock::time_point{std::chrono::seconds(1700000000)};
+    const auto source = GetEffectiveHdmiSourceLabel("switch2", L"detected PS5", L"SPD");
+    const auto signal = FormatHdmiSourceTiming({1920,1080,6000,true});
+    auto vrr = HdmiSourceVrrState::Unknown;
+    auto publish = [&] {
+        rpc.SetActivity(std::wstring(source), ComposeHdmiPresenceSignal(signal, L"HDR", vrr),
+                        started, "nitlink-logo", L"NitLink");
+    };
+    publish();
+    auto payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"details\":\"Switch 2\"") != std::string::npos &&
+          payload.find("\"state\":\"1920x1080 @ 60Hz · HDR\"") != std::string::npos &&
+          payload.find("In NitLink") == std::string::npos && payload.find("Capture Viewer") == std::string::npos,
+          "viewer RPC contains separate source and real signal, without repeated application name");
+    Check(payload.find("nitlink-logo") != std::string::npos && payload.find("1700000000") != std::string::npos,
+          "viewer logo and activity clock retained");
+    pipe.Send(reply, sizeof(reply));
+    ApplyHdmiSourceVrrMetadata(vrr, HdmiSourceVrrState::Enabled, publish);
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("60Hz · HDR · VRR") != std::string::npos &&
+          payload.find("1700000000") != std::string::npos && payload.find("nitlink-logo") != std::string::npos,
+          "VRR transition refreshes serialized presence and retains art/timer");
+    Check(!ApplyHdmiSourceVrrMetadata(vrr, HdmiSourceVrrState::Unknown, publish) &&
+          vrr == HdmiSourceVrrState::Enabled, "invalid VRR read does not clear RPC metadata");
+    pipe.Send(reply, sizeof(reply));
+    ApplyHdmiSourceVrrMetadata(vrr, HdmiSourceVrrState::Disabled, publish);
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("· VRR") == std::string::npos && payload.find("1700000000") != std::string::npos,
+          "valid disabled removes only VRR suffix");
+    pipe.Send(reply, sizeof(reply));
+    rpc.SetActivity(L"Spider-Man 2", ComposeHdmiPresenceState(source, signal, L"HDR", HdmiSourceVrrState::Enabled),
+                    started, "spider-man-2", L"Spider-Man 2");
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"details\":\"Spider-Man 2\"") != std::string::npos &&
+          payload.find("Switch 2 · 1920x1080 @ 60Hz · HDR · VRR") != std::string::npos &&
+          payload.find("\"large_image\":\"spider-man-2\"") != std::string::npos,
+          "selected game keeps game title/art and shares source mapping");
+    pipe.Send(reply, sizeof(reply));
+    rpc.SetActivity(L"", L"", started, "nitlink-logo", L"NitLink");
+    payload = ReceiveServerFrame(pipe, 1);
+    Check(payload.find("\"details\"") == std::string::npos && payload.find("\"state\"") == std::string::npos &&
+          payload.find("In NitLink") == std::string::npos, "unknown source/signal omit empty activity fields");
+    rpc.Disconnect();
 }
 static void ReconnectTest(bool updateWhileDisconnected) {
     Pipe first, second;
@@ -213,6 +267,7 @@ int main() {
           const bool reverted = RevertToSelf() != FALSE;
           Check(reverted && inspected && level == SecurityIdentification, "server cannot use client impersonation token"); }
         IncrementalReaderTest();
+        SourcePresenceTest();
         SlowReplyTest();
         ReconnectTest(false);
         ReconnectTest(true);

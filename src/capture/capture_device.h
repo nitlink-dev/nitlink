@@ -173,6 +173,7 @@ public:
         return device.name == m_publishedDeviceName;
     }
     bool          IsCapturing()     const { return m_capturing; }
+    bool IsUsingDirectShow() const { return m_dshow != nullptr; }
 
     // Enumerate every native media type this device exposes via Media
     // Foundation. Two responsibilities:
