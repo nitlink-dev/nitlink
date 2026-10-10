@@ -668,10 +668,11 @@ bool Config::Save(const std::string& path)
     file << "# Disabled while minimized, hidden or showing No signal.\n";
     file << "prevent_sleep = " << (preventSleep ? "true" : "false") << "\n\n";
 
-    file << "# Present-rate cap in Hz for the low-latency present (default 0)\n";
+    file << "# Present-rate cap in Hz for display-refresh pacing (default 0)\n";
     file << "# 0 = automatic: monitor refresh minus 3, when that is at least the\n";
-    file << "# source frame rate. 30-1000 = fixed cap. -1 = no cap.\n";
-    file << "# Bypassed while VSync is enabled.\n";
+    file << "# source frame rate; otherwise the monitor refresh rate.\n";
+    file << "# 30-1000 = fixed cap. -1 = explicitly uncapped.\n";
+    file << "# Bypassed with VSync or source/capture pacing. VRR_CAP.txt overrides.\n";
     file << "present_cap_hz = " << presentCapHz << "\n\n";
 
     file << "# Display aspect ratio: auto (source ratio), stretch (fill the\n";

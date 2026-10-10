@@ -12,6 +12,7 @@ using Microsoft::WRL::ComPtr;
 namespace NitLink {
 
 class DX11Renderer {
+    friend struct DX11RendererTestAccess;
 public:
     DX11Renderer();
     ~DX11Renderer();
@@ -19,12 +20,12 @@ public:
     bool Initialize(HWND hwnd, uint32_t width, uint32_t height);
     void Resize(uint32_t width, uint32_t height);
 
-    // doWait=true (default): BeginFrame blocks on the DXGI frame-latency
-    // waitable at its start -- the VRR/"Smooth" path. doWait=false: the caller
+    // doWait=true (default): BeginFrame applies the cap or DXGI frame-latency
+    // wait at its start -- the VRR/"Smooth" path. doWait=false: the caller
     // already waited via WaitForFrameReady() at the top of the loop (the
     // Low-Latency present-on-arrival path), so BeginFrame must not wait again.
     void BeginFrame(bool doWait = true);
-    // Block on the frame-latency waitable WITHOUT starting the frame, so the
+    // Apply the cap or frame-latency wait WITHOUT starting the frame, so the
     // Low-Latency loop can wait first, THEN read the freshest capture frame.
     void WaitForFrameReady();
     void DrawCaptureFrame();
@@ -142,11 +143,19 @@ public:
     // Initialize: the marker is a hand-set test rate and must not be
     // replaced by policy. VSync bypasses the cap, including a pinned rate.
     bool SetPresentCap(double hz);
+    double GetPresentCapHz() const { return m_vrrCapHz; }
+    bool IsPresentCapFromMarker() const { return m_presentCapFromMarker; }
 
     // Average milliseconds per phase since the previous call, then resets.
     // waitMs and uploadMs are per iteration (WaitForFrameReady counts the
     // iterations), presentMs is per presented frame.
-    struct PhaseTimes { double waitMs; double uploadMs; double presentMs; uint32_t iterations; uint32_t presents; };
+    struct PhaseTimes {
+        double waitMs = 0.0, uploadMs = 0.0, presentMs = 0.0;
+        uint32_t iterations = 0, presents = 0;
+        uint32_t presentOk = 0, presentStatuses = 0, presentFailed = 0;
+        uint32_t capWaits = 0, waitableWaits = 0, waitTimeouts = 0, waitFailed = 0, waitAlerted = 0;
+        HRESULT lastPresentResult = S_OK;
+    };
     PhaseTimes ConsumePhaseTimes();
 
     // How the swap chain reached the screen on the last frame, as reported by
@@ -339,7 +348,7 @@ private:
     double                         m_vrrCapHz = 0.0;
     bool                           m_presentCapFromMarker = false;
     float                          m_aspectOverride = 0.0f;
-    std::chrono::steady_clock::time_point m_lastPresentTime{};
+    std::chrono::steady_clock::time_point m_presentCapDeadline{};
 
     // Per-phase wall time accumulated between ConsumePhaseTimes calls, for
     // the run loop's pacing diagnostic: the frame-ready wait, the capture
@@ -351,6 +360,7 @@ private:
     double   m_phasePresentMs = 0.0;
     uint32_t m_phaseWaits     = 0;
     uint32_t m_phasePresents  = 0;
+    PhaseTimes m_phaseDiagnostics{};
 
     // Frame-latency telemetry. Averaged window of recent end-to-end render
     // times (BeginFrame to Present), reported into PushSettingsState so the

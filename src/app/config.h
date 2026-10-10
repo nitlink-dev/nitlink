@@ -159,12 +159,11 @@ struct Config {
     // displays. Kept independent of capture pacing and low-latency reads.
     bool         vsync = false;
 
-    // Present-rate cap for the low-latency tearing-allowed present, in Hz.
-    // 0 = automatic: the window's monitor refresh rate minus 3, applied only
-    // when that stays at or above the source frame rate, so a variable
-    // refresh display engages VRR and a fixed refresh display never drops
-    // frames. 30 to 1000 = fixed cap. -1 = no cap. A VRR_CAP.txt file next
-    // to the exe overrides these rates. VSync bypasses the tearing-mode cap.
+    // Present-rate cap for display-refresh pacing with VSync off, in Hz.
+    // 0 = automatic: monitor refresh minus 3 when it accommodates the source;
+    // otherwise monitor refresh. 30 to 1000 = fixed cap. -1 = explicitly
+    // uncapped. VRR_CAP.txt overrides these rates. VSync and source/capture
+    // pacing bypass the cap. Low latency only changes the wait's location.
     int          presentCapHz = 0;
 
     // Display aspect ratio. "auto" shows the source at the ratio the card

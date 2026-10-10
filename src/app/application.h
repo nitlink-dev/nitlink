@@ -19,6 +19,7 @@
 #include "capture_output_policy.h"
 #include "source_cadence.h"
 #include "presentation_state.h"
+#include "present_cap_policy.h"
 #include "discord/discord_rpc.h"
 
 #include <memory>
@@ -441,7 +442,9 @@ private:
     uint32_t m_loopIterations  = 0;
     int      m_lastPresentationMode = -2;  // last DXGI composition mode logged
     bool m_lowLatency = true;   // present-on-arrival (wait-then-read) vs VRR pacing; default ON, toggle Alt+L / F1
-    double m_appliedPresentCapHz = -1.0;  // last cap pushed to the renderer, logged on change only
+    double m_presentCapMonitorHz = 0.0;
+    PresentCapDecision m_presentCapDecision{};
+    std::wstring m_lastPresentCapLog; // policy changes can matter even at the same numeric cap
 
     // App ingest: live card-driver-to-app-callback delivery time, computed
     // each frame as arrivalWallNs - (frame.deviceTimestamp * 100) in ns

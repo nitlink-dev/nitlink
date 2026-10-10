@@ -2026,7 +2026,7 @@ void Application::Run()
             if (m_frameBuffer) {
                 m_frameBuffer->WaitForFrame(waitMs > 0 ? static_cast<unsigned long>(waitMs) : 0);
             }
-        } else if (m_lowLatency && m_renderer) {
+        } else if (ChoosePresentWaitPoint(pacing, m_lowLatency) == PresentWaitPoint::BeforeCapture && m_renderer) {
             m_renderer->WaitForFrameReady();
         }
 
@@ -2593,10 +2593,12 @@ void Application::Run()
                 if (m_settingsVisible) PushSettingsState();
             }
 
-            // VRR pacing diagnostic, every 2 seconds. Reports exactly what
-            // the differ is observing and whether classification is stable.
-            if (m_frameDiffer) {
+            // Low-frequency diagnostics: submission results and wait behavior
+            // remain observable even when the differ is unavailable.
+            if (m_frameDiffer || m_renderer) {
                 static auto lastDiffLog = Clock::now();
+                static uint64_t lastDropped = 0, lastReadbackSkips = 0;
+                static bool haveDiagnosticBaseline = false;
                 if (std::chrono::duration<double>(now - lastDiffLog).count() >= 2.0) {
                     // dropped = total frames the producer (capture worker)
                     // overran because the renderer hadn't picked up the
@@ -2608,11 +2610,15 @@ void Application::Run()
                     // chasing transition-time anomalies.
                     const uint64_t dropped =
                         m_frameBuffer ? m_frameBuffer->GetFramesDropped() : 0;
+                    const uint64_t readbackSkips = m_frameDiffer ? m_frameDiffer->GetReadbackSkips() : 0;
+                    const bool counterReset = !haveDiagnosticBaseline ||
+                        dropped < lastDropped || readbackSkips < lastReadbackSkips;
+                    const CaptureFormat negotiated = m_captureDevice ? m_captureDevice->GetOutputFormat() : CaptureFormat{};
                     std::wstringstream ss;
-                    ss << L"FPS/pacing: lastDiff=" << m_frameDiffer->GetLastDiffValue()
-                       << L" threshold=" << m_frameDiffer->GetThreshold()
-                       << L" maxTile=" << m_frameDiffer->GetLastMaxTileValue()
-                       << L" tileThr=" << m_frameDiffer->GetTileThreshold()
+                    ss << L"FPS/pacing: lastDiff=" << (m_frameDiffer ? m_frameDiffer->GetLastDiffValue() : 0.0f)
+                       << L" threshold=" << (m_frameDiffer ? m_frameDiffer->GetThreshold() : 0.0f)
+                       << L" maxTile=" << (m_frameDiffer ? m_frameDiffer->GetLastMaxTileValue() : 0.0f)
+                       << L" tileThr=" << (m_frameDiffer ? m_frameDiffer->GetTileThreshold() : 0.0f)
                        << L" contentFps=" << m_currentContentFps
                        << L" captureFps=" << m_currentFps
                        << L" dropped=" << dropped
@@ -2641,8 +2647,38 @@ void Application::Run()
                            << L" presentMs=" << ph.presentMs
                            << L" iters=" << m_loopIterations
                            << L" presents=" << ph.presents
-                           << L" readbackSkips=" << m_frameDiffer->GetReadbackSkips()
+                           << L" readbackSkips=" << readbackSkips
+                           << L" droppedDelta=" << (counterReset ? 0 : dropped - lastDropped)
+                           << L" readbackSkipDelta=" << (counterReset ? 0 : readbackSkips - lastReadbackSkips)
+                           << L" counterReset=" << counterReset
+                           << L" sampleSeconds=" << std::chrono::duration<double>(now - lastDiffLog).count()
+                           << L" presentOk=" << ph.presentOk
+                           << L" presentStatuses=" << ph.presentStatuses
+                           << L" presentFailed=" << ph.presentFailed
+                           << L" lastPresentHr=0x" << std::hex << static_cast<uint32_t>(ph.lastPresentResult) << std::dec
+                           << L" capWaits=" << ph.capWaits
+                           << L" waitableWaits=" << ph.waitableWaits
+                           << L" waitTimeouts=" << ph.waitTimeouts
+                           << L" waitFailed=" << ph.waitFailed
+                           << L" waitAlerted=" << ph.waitAlerted
+                           << L" pacing=" << (pacing == kPacingRefresh ? L"refresh" : pacing == kPacingCaptured ? L"captured" : L"unique")
+                           << L" monitorHz=" << m_presentCapMonitorHz
+                           << L" vsync=" << (m_renderer && m_renderer->IsVSyncOn())
+                           << L" lowLatency=" << m_lowLatency
+                           << L" capConfig=" << (m_config ? m_config->presentCapHz : 0)
+                           << L" capStoredHz=" << (m_renderer ? m_renderer->GetPresentCapHz() : 0.0)
+                           << L" capEffectiveHz=" << m_presentCapDecision.effectiveHz
+                           << L" capReason=" << PresentCapReasonName(m_presentCapDecision.reason)
+                           << L" mfSize=" << negotiated.width << L"x" << negotiated.height
+                           << L" mfRate=" << negotiated.fpsNumerator << L"/" << negotiated.fpsDenominator
+                           << L" mfFormat=" << (negotiated.subtype == MFVideoFormat_NV12 ? L"NV12"
+                               : negotiated.subtype == MFVideoFormat_P010 ? L"P010" : L"other")
+                           << L" settingsVisible=" << m_settingsVisible
+                           << L" gpuMs=" << (m_renderer ? m_renderer->GetLastGpuMs() : 0.0)
                            << L" compMode=" << (m_renderer ? m_renderer->PresentationMode() : -1);
+                        lastDropped = dropped;
+                        lastReadbackSkips = readbackSkips;
+                        haveDiagnosticBaseline = true;
                         m_loopPeriodSumMs = 0.0;
                         m_loopDifferSumMs = 0.0;
                         m_loopIterations  = 0;
@@ -2663,8 +2699,8 @@ void Application::Run()
         // Decision: should this iteration render and Present?
         //
         // kPacingRefresh: Present every iteration. The waitable swap chain
-        //   paces the loop near the desktop refresh rate, which is the
-        //   lowest-latency behavior and the default.
+        //   limits queue depth, while Auto/explicit caps can limit submissions.
+        //   An immediate tearing present may exceed refresh when explicitly uncapped.
         //
         // kPacingCaptured: Present once per frame the card delivers. The loop
         //   already blocked on the capture buffer above, so a fresh frame is
@@ -2731,14 +2767,6 @@ void Application::Run()
         m_sourceCadence.OnPresent();
         if (cadenceHold) m_cadenceHoldPresents++;
 
-        // Small sleep to avoid 100% CPU spin when running uncapped.
-        // 1ms is short enough to be imperceptible but stops the render loop
-        // from hammering at 3000+ fps doing nothing useful.
-        // LATENCY TEST (2026-06-02): disabled -- cost ~1ms on every presented
-        // frame; the waitable swapchain already paces the loop, so this was
-        // redundant. Restore if idle-content CPU spin returns.
-        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
         auto renderStart = Clock::now();
 
         // Frame-age localizer: ms from MF delivering this frame to the moment
@@ -2760,7 +2788,7 @@ void Application::Run()
         // Source-paced modes already wait for capture arrivals. Waiting on
         // DXGI after selecting a frame would age it and allow later capture
         // frames to replace one another before the next read.
-        const bool waitForSwapChain = pacing == kPacingRefresh && !m_lowLatency;
+        const bool waitForSwapChain = ChoosePresentWaitPoint(pacing, m_lowLatency) == PresentWaitPoint::BeforeRender;
 
         // When the settings overlay is visible, render a solid black
         // frame underneath the WebView2 child every iteration. This is
@@ -4149,96 +4177,48 @@ void Application::ToggleVSync()
     PushSettingsState();
 }
 
-// Present-rate cap policy for the low-latency tearing-allowed present.
-//
-// The tearing-mode cap keeps presents below the variable-refresh ceiling.
-// Synchronized presents bypass it so a second clock does not delay frames
-// past the next refresh. A fixed-refresh display gains nothing from the cap and loses frames whenever the
-// cap sits under the source rate (a 60 Hz panel with a 60 fps source capped
-// at 57 Hz skips three frames a second). The automatic cap is therefore the
-// monitor refresh minus 3, applied only when that stays at or above the
-// source frame rate. present_cap_hz in nitlink.json: 0 automatic, negative
-// off, 30 to 1000 a fixed rate. A VRR_CAP.txt marker overrides the cap
-// policy inside the renderer, but is also bypassed while VSync is enabled.
+// Present-rate cap for display-refresh pacing with VSync off. Keep the
+// existing monitor-minus-3 headroom when it can accommodate the source;
+// otherwise cap at the monitor rate instead of accidentally going unlimited.
+// Explicit Off, fixed caps, marker priority and source/VSync bypasses remain.
 //
 // The refresh rate is read from the current display mode of the monitor
 // under the window. A window dragged to another monitor without a resize
 // keeps the previous cap until the next resize or format change.
 void Application::ApplyPresentCap()
 {
-    if (!m_renderer) return;
-    if (m_renderer->IsVSyncOn()) {
-        m_renderer->SetPresentCap(0.0);
-        if (m_appliedPresentCapHz != 0.0) {
-            m_appliedPresentCapHz = 0.0;
-            AppLog(L"PresentCap: bypassed while VSync is enabled");
+    if (!m_renderer || !m_config) return;
+    m_presentCapMonitorHz = 0.0;
+    HMONITOR monitor = m_window
+        ? MonitorFromWindow(m_window->GetHWND(), MONITOR_DEFAULTTONEAREST) : nullptr;
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    if (monitor && GetMonitorInfoW(monitor, &info)) {
+        DEVMODEW mode{};
+        mode.dmSize = sizeof(mode);
+        // 0/1 mean hardware default; do not invent a refresh rate on query failure.
+        if (EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
+            mode.dmDisplayFrequency > 1) {
+            m_presentCapMonitorHz = static_cast<double>(mode.dmDisplayFrequency);
         }
-        return;
     }
+    const uint32_t rateHint = m_captureDevice ? m_captureDevice->GetPresentPacingRateHint() : 0;
+    m_presentCapDecision = ChoosePresentCap({m_config->presentCapHz, m_presentCapMonitorHz,
+        static_cast<double>(rateHint), m_config->presentPacing, m_renderer->IsVSyncOn(),
+        m_renderer->IsPresentCapFromMarker(), m_renderer->GetPresentCapHz()});
+    m_renderer->SetPresentCap(m_presentCapDecision.requestedHz);
 
-    // The cap exists to hold a tearing-allowed present a few Hz under the
-    // panel maximum so a variable refresh display stays inside its VRR
-    // window. Frame-generation friendly mode already paces Present from the
-    // source cadence, which sits below the panel rate, so a cap on top of
-    // that would drop captured frames without buying anything.
-    if (m_config && m_config->presentPacing != kPacingRefresh) {
-        const bool capOff = m_renderer->SetPresentCap(0.0);
-        if (m_appliedPresentCapHz != 0.0) {
-            m_appliedPresentCapHz = 0.0;
-            AppLog(capOff
-                ? L"PresentCap: off (present pacing follows the source)"
-                : L"PresentCap: VRR_CAP.txt pins the renderer cap; source-paced policy not applied");
-        }
-        return;
-    }
-
-    const int cfg = m_config->presentCapHz;
-    double capHz = 0.0;
-    std::wstring policy;
-
-    if (cfg >= 30) {
-        capHz = static_cast<double>(cfg);
-        policy = L"fixed " + std::to_wstring(cfg) + L" Hz (present_cap_hz)";
-    } else if (cfg < 0) {
-        policy = L"off (present_cap_hz)";
-    } else {
-        double refreshHz = 0.0;
-        HMONITOR monitor = MonitorFromWindow(m_window->GetHWND(), MONITOR_DEFAULTTONEAREST);
-        MONITORINFOEXW info{};
-        info.cbSize = sizeof(info);
-        if (monitor && GetMonitorInfoW(monitor, &info)) {
-            DEVMODEW mode{};
-            mode.dmSize = sizeof(mode);
-            // dmDisplayFrequency of 0 or 1 means the hardware default rate,
-            // which carries no usable number.
-            if (EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
-                mode.dmDisplayFrequency > 1) {
-                refreshHz = static_cast<double>(mode.dmDisplayFrequency);
-            }
-        }
-
-        const uint32_t pacingRateHint = m_captureDevice
-            ? m_captureDevice->GetPresentPacingRateHint() : 0;
-        const double candidate = refreshHz - 3.0;
-        std::wstringstream ss;
-        if (refreshHz >= 50.0 && candidate >= static_cast<double>(pacingRateHint)) {
-            capHz = candidate;
-            ss << L"automatic " << static_cast<int>(candidate) << L" Hz (monitor "
-               << static_cast<int>(refreshHz) << L" Hz, pacing hint " << pacingRateHint << L" fps)";
-        } else if (refreshHz < 50.0) {
-            ss << L"off (monitor refresh unknown or under 50 Hz)";
-        } else {
-            ss << L"off (monitor " << static_cast<int>(refreshHz) << L" Hz minus 3 would sit under the "
-               << pacingRateHint << L" fps pacing hint)";
-        }
-        policy = ss.str();
-    }
-
-    const bool applied = m_renderer->SetPresentCap(capHz);
-    if (capHz != m_appliedPresentCapHz) {
-        m_appliedPresentCapHz = capHz;
-        AppLog(applied ? L"PresentCap: " + policy
-                       : L"PresentCap: VRR_CAP.txt pins the renderer cap; policy not applied: " + policy);
+    std::wstringstream ss;
+    ss << L"PresentCap: config=" << m_config->presentCapHz
+       << L" monitor=" << info.szDevice << L" monitorHz=" << m_presentCapMonitorHz
+       << L" pacingHint=" << rateHint
+       << L" requestedHz=" << m_presentCapDecision.requestedHz
+       << L" storedHz=" << m_renderer->GetPresentCapHz()
+       << L" effectiveHz=" << m_presentCapDecision.effectiveHz
+       << L" reason=" << PresentCapReasonName(m_presentCapDecision.reason);
+    if (ss.str() != m_lastPresentCapLog) {
+        m_lastPresentCapLog = ss.str();
+        AppLog(m_lastPresentCapLog);
     }
 }
 
