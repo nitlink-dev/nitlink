@@ -28,7 +28,9 @@ public:
     // Low-Latency loop can wait first, THEN read the freshest capture frame.
     void WaitForFrameReady();
     void DrawCaptureFrame();
-    void EndFrame();
+    // Returns true only when Present returned S_OK. This reports submission,
+    // not the number of frames scanned out by the monitor.
+    bool EndFrame();
 
     // Latched true after EndFrame's Present (or a per-frame capture-texture
     // Map) reports the graphics device was removed or reset (TDR, driver

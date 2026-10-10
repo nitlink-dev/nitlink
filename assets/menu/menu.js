@@ -738,9 +738,12 @@
         imageValue.textContent = path ? path.substring(slash + 1) : t('meta.none');
         imageValue.title = path || t('meta.none');
       }
-      const hasSignal = s.negotiatedWidth > 0 && s.negotiatedHeight > 0 && s.negotiatedFps > 0;
-      setText('meta-resolution', hasSignal
-        ? `${s.negotiatedWidth}x${s.negotiatedHeight} / ${s.negotiatedFps} ${t('units.fps')}`
+      const hasNegotiatedFormat = s.negotiatedWidth > 0 && s.negotiatedHeight > 0;
+      const negotiatedFps = s.negotiatedFpsNumerator > 0 && s.negotiatedFpsDenominator > 0
+        ? s.negotiatedFpsNumerator / s.negotiatedFpsDenominator : s.negotiatedFps;
+      const rateText = negotiatedFps > 0 ? String(Number(negotiatedFps.toFixed(2))) : '--';
+      setText('meta-resolution', hasNegotiatedFormat
+        ? `${s.negotiatedWidth}x${s.negotiatedHeight} / ${rateText} ${t('units.fps')}`
         : t('meta.none'));
       setText('meta-format', s.negotiatedFormat === 'Unknown' ? t('value.auto') : s.negotiatedFormat);
       setText('meta-link', s.linkText);

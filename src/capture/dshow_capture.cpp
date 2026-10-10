@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <limits>
 
 using Microsoft::WRL::ComPtr;
 
@@ -409,6 +410,17 @@ STDMETHODIMP SinkPin::Receive(IMediaSample* s) {
 DShowCapture::DShowCapture() = default;
 DShowCapture::~DShowCapture() { Close(); }
 
+void DShowCapture::ReadFrameRateFromInterval(int64_t interval)
+{
+    // AvgTimePerFrame is the negotiated period in 100 ns units. Populate the
+    // ratio too, so telemetry cannot reuse CaptureFormat's default 60/1.
+    const bool known = interval > 0 &&
+        static_cast<uint64_t>(interval) <= std::numeric_limits<uint32_t>::max();
+    m_format.fpsNumerator = known ? 10000000u : 0;
+    m_format.fpsDenominator = known ? static_cast<uint32_t>(interval) : 1;
+    m_format.fps = m_format.fpsNumerator / m_format.fpsDenominator;
+}
+
 static ComPtr<IBaseFilter> FindCaptureFilter(const std::wstring& name) {
     ComPtr<ICreateDevEnum> sysEnum;
     if (FAILED(CoCreateInstance(CLSID_SystemDeviceEnum, nullptr, CLSCTX_INPROC_SERVER,
@@ -511,7 +523,7 @@ bool DShowCapture::Open(const DeviceInfo& device) {
         VIDEOINFOHEADER* vih = (VIDEOINFOHEADER*)negMt->pbFormat;
         m_format.width  = (uint32_t)vih->bmiHeader.biWidth;
         m_format.height = (uint32_t)std::abs(static_cast<int64_t>(vih->bmiHeader.biHeight));
-        m_format.fps    = vih->AvgTimePerFrame ? (uint32_t)(10000000LL / vih->AvgTimePerFrame) : 0;
+        ReadFrameRateFromInterval(vih->AvgTimePerFrame);
         m_format.stride = m_format.width;          // NV12: Y plane stride == width
         m_format.subtype = MFVideoFormat_NV12;
         m_format.topDown = true;

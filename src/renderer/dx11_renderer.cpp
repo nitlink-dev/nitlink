@@ -2183,7 +2183,7 @@ bool DX11Renderer::ConsumeDeviceLost()
     return v;
 }
 
-void DX11Renderer::EndFrame()
+bool DX11Renderer::EndFrame()
 {
     // Close this frame's GPU timing window BEFORE Present, so the measured
     // span covers only the work issued between BeginFrame and here. Present
@@ -2246,6 +2246,7 @@ void DX11Renderer::EndFrame()
             m_renderMsCount = 0;
         }
     }
+    return hrPresent == S_OK;
 }
 
 // HDR10 screenshot tonemap: convert one R10G10B10A2_UNORM backbuffer pixel

@@ -158,6 +158,25 @@ int main(int argc, char** argv) {
         host.PostMessage(LR"({"state":{"locale":"zh-TW","languagePreference":"zh-TW","audioVolume":0.75}})");
         Check(PumpUntil([&] { return Script(view, L"document.documentElement.lang") == L"\"zh-TW\""; }),
               "native state reaches trusted page");
+        for (const auto* locale : {L"en-US", L"zh-TW"}) {
+            const std::wstring prefix = std::wstring(L"{\"state\":{\"locale\":\"") + locale +
+                L"\",\"negotiatedWidth\":1920,\"negotiatedHeight\":1080,";
+            host.PostMessage((prefix + L"\"negotiatedFps\":120,\"negotiatedFpsNumerator\":120,"
+                              L"\"negotiatedFpsDenominator\":1}}").c_str());
+            Check(PumpUntil([&] { return Script(view,
+                L"document.getElementById('meta-resolution').textContent === '1920x1080 / 120 FPS'") == L"true"; }),
+                "negotiated integer rate displays in both languages");
+            host.PostMessage((prefix + L"\"negotiatedFps\":119,\"negotiatedFpsNumerator\":120000,"
+                              L"\"negotiatedFpsDenominator\":1001}}").c_str());
+            Check(PumpUntil([&] { return Script(view,
+                L"document.getElementById('meta-resolution').textContent === '1920x1080 / 119.88 FPS'") == L"true"; }),
+                "negotiated fractional rate displays without integer truncation");
+            host.PostMessage((prefix + L"\"negotiatedFps\":0,\"negotiatedFpsNumerator\":0,"
+                              L"\"negotiatedFpsDenominator\":1}}").c_str());
+            Check(PumpUntil([&] { return Script(view,
+                L"document.getElementById('meta-resolution').textContent === '1920x1080 / -- FPS'") == L"true"; }),
+                "missing negotiated rate remains unknown while resolution stays visible");
+        }
         host.PostMessage(LR"({"state":{"noSignalMode":"image","noSignalImage":"C:\\photo.png","noSignalImageAvailable":true}})");
         Check(PumpUntil([&] { return Script(view, L"document.getElementById('no-signal-mode-val').textContent === window.NitLinkLocales['zh-TW']['value.customImage']") == L"true"; }),
               "custom image label available");

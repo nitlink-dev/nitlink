@@ -452,8 +452,8 @@ private:
     double   m_mfDeliveryLatencyMs  = 0.0;
     uint32_t m_mfDeliveryLogCounter = 0;   // periodic DebugView throttle
 
-    uint32_t m_currentFps        = 0;   // HDMI signal rate (~60 healthy)
-    uint32_t m_currentContentFps = 0;   // game unique-frame rate (from differ)
+    uint32_t m_currentFps        = 0;   // frames written to the capture buffer per second
+    uint32_t m_currentContentFps = 0;   // changed frames estimated by the GPU differ per second
     uint64_t m_uniqueFrameCount  = 0;
     uint64_t m_skippedFrameCount = 0;   // frames skipped by VRR present pacing (total)
     // Keep skip counts for pacing diagnostics. Capture stalls make iteration
@@ -463,7 +463,7 @@ private:
     // Source frame rate pacing: keeps presents at the measured source rate
     // while the picture is still (see source_cadence.h).
     SourceCadence m_sourceCadence;
-    uint64_t m_presentCount        = 0;   // presents issued by the run loop (total)
+    uint64_t m_presentCount        = 0;   // run-loop Present calls that returned S_OK (total)
     uint32_t m_currentPresentFps   = 0;   // presents per second, sampled with the fps counters
     uint64_t m_cadenceHoldPresents = 0;   // presents issued by the still-picture cadence hold (total)
 

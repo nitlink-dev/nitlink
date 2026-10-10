@@ -71,7 +71,7 @@ NitLink is NOT for you if:
 - **True-HDR screenshots.** `Ctrl+S` saves a shareable tonemapped SDR `.png` and, when capturing HDR, a true-HDR `.jxr` (scRGB FP16) sidecar that opens as real HDR in the Windows Photos app.
 - **MJP-style Catmull-Rom resampling**: sharp bicubic without ringing artifacts, the same algorithm used by mpv and madVR.
 - **NIS upscaling**: NVIDIA Image Scaling integrated as a compute-shader pass for sharpening at non-native window sizes.
-- **HDR-aware HUD overlay**: fps, latency, pipeline status. Composited correctly into the HDR backbuffer at 203-nit paper-white so it doesn't blow out against HDR content.
+- **HDR-aware HUD overlay**: successful Present FPS, Capture FPS, Content FPS (estimated), latency and pipeline status. Present counts submissions, including repeated pictures; Content estimates picture changes rather than game FPS. Composited correctly into the HDR backbuffer at 203-nit paper-white so it doesn't blow out against HDR content.
 - **WASAPI audio routing** with volume + mute.
 - **Borderless fullscreen** and **picture-in-picture**.
 - **Prevent sleep while playing.** Enabled by default while captured video is visible, including paused games. Releases when minimized, hidden, showing No signal or closed. Turn off **Prevent sleep** in F1 to keep normal Windows idle sleep behavior. Windows power settings are not changed; manual sleep and policy-enforced screen locking remain available.
@@ -119,7 +119,7 @@ The latency above is *capture latency* (HDMI-into-card → photons-off-your-pane
 </p>
 
 <p align="center">
-  <em>HUD overlay (<code>Ctrl+F3</code>) on a live 4K60 PS5 feed: content fps from the GPU frame differ, capture/render latency, and the active capture format.</em>
+  <em>HUD overlay (<code>Ctrl+F3</code>) on a live 4K60 PS5 feed. This screenshot predates the FPS telemetry update: the current HUD shows Present FPS as its primary value, with Capture FPS and estimated Content FPS below it.</em>
 </p>
 
 ### Tested platforms

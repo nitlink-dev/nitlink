@@ -608,15 +608,10 @@ bool CaptureDevice::Open(const DeviceInfo& device)
         m_format.width  = w;
         m_format.height = h;
 
-        // Also read back the actual frame rate. If MF silently downgraded
-        // (e.g. driver can't sustain 4K@60 even though it advertised the
-        // format), m_format.fps now reflects what's actually being delivered.
-        const MediaFrameRate negotiatedRate =
-            GetFrameRateFromMediaType(actualType.Get());
-        if (negotiatedRate.numerator > 0) {
-            SetFormatFrameRate(m_format, negotiatedRate.numerator,
-                               negotiatedRate.denominator);
-        }
+        // MF's actual output media type is authoritative for the negotiated
+        // rate, not the requested override. A missing rate is unknown (0),
+        // never the requested 120. Delivery FPS is measured independently.
+        UpdateFrameRateFromActual(actualType.Get());
         m_format.subtype = subtype;
 
         // Detect row order empirically. MF_MT_DEFAULT_STRIDE is a signed int32
@@ -766,6 +761,7 @@ void CaptureDevice::PublishFormat()
 {
     std::lock_guard<std::mutex> lock(m_formatMutex);
     m_publishedFormat = m_format;
+    m_publishedRateHint = m_formatRateHint;
     m_hasPublishedFormat = true;
     m_publishedDeviceName = m_deviceName;
     m_publishedDeviceIdentity = m_deviceIdentity;
@@ -775,9 +771,20 @@ void CaptureDevice::ClearPublishedFormat()
 {
     std::lock_guard<std::mutex> lock(m_formatMutex);
     m_publishedFormat = {};
+    m_publishedRateHint = 0;
     m_hasPublishedFormat = false;
     m_publishedDeviceName.clear();
     m_publishedDeviceIdentity.clear();
+}
+
+void CaptureDevice::UpdateFrameRateFromActual(IMFMediaType* actualType)
+{
+    // Previously a missing MF rate left this selected rate in m_format.fps,
+    // and the automatic present cap used it. Keep that policy input separate
+    // while publishing the actual rate as unknown instead of the request.
+    m_formatRateHint = m_format.fps;
+    const auto rate = GetFrameRateFromMediaType(actualType);
+    SetFormatFrameRate(m_format, rate.numerator, rate.denominator);
 }
 
 HRESULT CaptureDevice::SetOutputFrameRate(IMFMediaType* outputType)

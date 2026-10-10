@@ -1817,9 +1817,7 @@ void Application::Run()
     auto lastPresentTime = std::chrono::steady_clock::now();
     
     auto lastFpsUpdate = Clock::now();
-    uint64_t lastFramesWritten    = 0;
-    uint64_t lastUniqueFrameCount = 0;
-    uint64_t lastPresentCount     = 0;
+    FrameRateCounters lastFpsCounters;
 
     MSG msg{};
     while (m_running) {
@@ -2578,27 +2576,17 @@ void Application::Run()
                 // Null guard: m_frameBuffer can be null between a failed
                 // reopen and a later successful one. Treat as "no new frames
                 // written this window" so m_currentFps naturally reads 0.
-                uint64_t framesWritten = m_frameBuffer
-                    ? m_frameBuffer->GetFramesWritten()
-                    : lastFramesWritten;
-                // Buffer-reset guard: framesWritten resets to 0 on every
-                // FrameBuffer rebuild (HDR/SDR reconcile, format change).
-                // Without this guard, 0 - lastFramesWritten underflows the
-                // unsigned subtraction and produces a ~2^32 fps spike on
-                // the next sample.
-                uint64_t deltaFrames = (framesWritten >= lastFramesWritten)
-                    ? framesWritten - lastFramesWritten
-                    : 0;
-                m_currentFps         = static_cast<uint32_t>(deltaFrames / elapsed);
-                lastFramesWritten    = framesWritten;
-
-                uint64_t deltaUnique   = m_uniqueFrameCount - lastUniqueFrameCount;
-                m_currentContentFps    = static_cast<uint32_t>(deltaUnique / elapsed);
-                lastUniqueFrameCount   = m_uniqueFrameCount;
-
-                uint64_t deltaPresents = m_presentCount - lastPresentCount;
-                m_currentPresentFps    = static_cast<uint32_t>(deltaPresents / elapsed);
-                lastPresentCount       = m_presentCount;
+                const FrameRateCounters counters{
+                    m_frameBuffer ? m_frameBuffer->GetFramesWritten()
+                                  : lastFpsCounters.captured,
+                    m_uniqueFrameCount, m_presentCount
+                };
+                const auto rates = SampleFrameRates(counters, lastFpsCounters,
+                                                   elapsed, m_frameDiffer != nullptr);
+                m_currentFps        = rates.captureFps;
+                m_currentContentFps = rates.contentFps;
+                m_currentPresentFps = rates.presentFps;
+                lastFpsCounters     = counters;
 
                 lastFpsUpdate          = now;
 
@@ -2621,12 +2609,12 @@ void Application::Run()
                     const uint64_t dropped =
                         m_frameBuffer ? m_frameBuffer->GetFramesDropped() : 0;
                     std::wstringstream ss;
-                    ss << L"VRR pacing: lastDiff=" << m_frameDiffer->GetLastDiffValue()
+                    ss << L"FPS/pacing: lastDiff=" << m_frameDiffer->GetLastDiffValue()
                        << L" threshold=" << m_frameDiffer->GetThreshold()
                        << L" maxTile=" << m_frameDiffer->GetLastMaxTileValue()
                        << L" tileThr=" << m_frameDiffer->GetTileThreshold()
                        << L" contentFps=" << m_currentContentFps
-                       << L" hdmiFps=" << m_currentFps
+                       << L" captureFps=" << m_currentFps
                        << L" dropped=" << dropped
                        << L" totalSkipped=" << m_skippedFrameCount
                        << L" consecutive=" << m_consecutiveSkips
@@ -2741,7 +2729,6 @@ void Application::Run()
         }
 
         m_sourceCadence.OnPresent();
-        m_presentCount++;
         if (cadenceHold) m_cadenceHoldPresents++;
 
         // Small sleep to avoid 100% CPU spin when running uncapped.
@@ -2793,7 +2780,7 @@ void Application::Run()
         // frame applies only to the full-window panel.
         if (panelCoversPicture) {
             m_renderer->BeginFrame(waitForSwapChain);   // clears to (0,0,0,1): solid black
-            m_renderer->EndFrame();     // presents the black frame
+            if (m_renderer->EndFrame()) ++m_presentCount; // presents the black frame
             lastPresentTime = std::chrono::steady_clock::now();
             continue;                    // skip the rest of the pipeline
         }
@@ -2899,18 +2886,8 @@ void Application::Run()
                 stats.renderLatencyMs  = m_renderLatencyMs;
                 stats.appIngestMs      = m_mfDeliveryLatencyMs;
                 stats.gpuMs            = m_renderer->GetLastGpuMs();
-                // Content fps comes from the frame differ (detects unique
-                // frames). When the scene is static the differ correctly
-                // reports 0, but a "0 fps" reading is misleading because
-                // the game IS still running. Fall back to the HDMI signal
-                // rate in that case so the overlay never lies about it.
-                // Source frame rate pacing reports presents per second
-                // instead, the rate an external frame-generation tool sees.
-                stats.fps = (pacing == kPacingUnique && m_currentPresentFps > 0)
-                              ? m_currentPresentFps
-                              : (m_frameDiffer && m_currentContentFps > 0)
-                                  ? m_currentContentFps
-                                  : m_currentFps;
+                stats.frameRates = {m_currentFps, m_currentContentFps,
+                                    m_currentPresentFps, m_frameDiffer != nullptr};
                 stats.captureWidth     = m_captureDevice->GetOutputFormat().width;
                 stats.captureHeight    = m_captureDevice->GetOutputFormat().height;
                 stats.deviceName       = m_captureDevice->GetDeviceName();
@@ -2952,7 +2929,7 @@ void Application::Run()
                 TakeScreenshot();
             }
 
-            m_renderer->EndFrame();
+            if (m_renderer->EndFrame()) ++m_presentCount;
             lastPresentTime = std::chrono::steady_clock::now();
         }
 
@@ -3064,24 +3041,8 @@ void Application::Run()
             stats.renderLatencyMs  = m_renderLatencyMs;
             stats.appIngestMs      = m_mfDeliveryLatencyMs;
             stats.gpuMs            = m_renderer->GetLastGpuMs();
-            // Prefer the real game framerate (from FrameDiffer) over the
-            // HDMI signal rate. They diverge for sub-60fps games: HDMI
-            // duplicates frames at the signal level, so a 30fps game still
-            // produces 60 captured frames/sec, and only the differ knows
-            // the real number.
-            //
-            // BUT: when the scene is static (menu screens, paused game,
-            // looking at a wall), the differ correctly reports 0 unique
-            // frames, and displaying "0 fps" to the user is misleading
-            // because the game IS still running. Fall back to the HDMI
-            // signal rate in that case. Source frame rate pacing reports
-            // presents per second instead, the rate an external
-            // frame-generation tool sees.
-            stats.fps = (pacing == kPacingUnique && m_currentPresentFps > 0)
-                          ? m_currentPresentFps
-                          : (m_frameDiffer && m_currentContentFps > 0)
-                              ? m_currentContentFps
-                              : m_currentFps;
+            stats.frameRates = {m_currentFps, m_currentContentFps,
+                                m_currentPresentFps, m_frameDiffer != nullptr};
             stats.captureWidth     = m_captureDevice->GetOutputFormat().width;
             stats.captureHeight    = m_captureDevice->GetOutputFormat().height;
             stats.deviceName       = m_captureDevice->GetDeviceName();
@@ -3109,7 +3070,7 @@ void Application::Run()
             TakeScreenshot();
         }
 
-        m_renderer->EndFrame();
+        if (m_renderer->EndFrame()) ++m_presentCount;
         lastPresentTime = std::chrono::steady_clock::now();
         } // end if (!hdrActive)
         
@@ -4256,18 +4217,19 @@ void Application::ApplyPresentCap()
             }
         }
 
-        const uint32_t sourceFps = m_captureDevice ? m_captureDevice->GetOutputFormat().fps : 0;
+        const uint32_t pacingRateHint = m_captureDevice
+            ? m_captureDevice->GetPresentPacingRateHint() : 0;
         const double candidate = refreshHz - 3.0;
         std::wstringstream ss;
-        if (refreshHz >= 50.0 && candidate >= static_cast<double>(sourceFps)) {
+        if (refreshHz >= 50.0 && candidate >= static_cast<double>(pacingRateHint)) {
             capHz = candidate;
             ss << L"automatic " << static_cast<int>(candidate) << L" Hz (monitor "
-               << static_cast<int>(refreshHz) << L" Hz, source " << sourceFps << L" fps)";
+               << static_cast<int>(refreshHz) << L" Hz, pacing hint " << pacingRateHint << L" fps)";
         } else if (refreshHz < 50.0) {
             ss << L"off (monitor refresh unknown or under 50 Hz)";
         } else {
             ss << L"off (monitor " << static_cast<int>(refreshHz) << L" Hz minus 3 would sit under the "
-               << sourceFps << L" fps source)";
+               << pacingRateHint << L" fps pacing hint)";
         }
         policy = ss.str();
     }
@@ -4931,6 +4893,8 @@ void Application::PushSettingsState(bool refreshCaptureDevices)
         js << L"\"negotiatedWidth\":"  << fmt.width  << L",";
         js << L"\"negotiatedHeight\":" << fmt.height << L",";
         js << L"\"negotiatedFps\":"    << fmt.fps    << L",";
+        js << L"\"negotiatedFpsNumerator\":" << fmt.fpsNumerator << L",";
+        js << L"\"negotiatedFpsDenominator\":" << fmt.fpsDenominator << L",";
         js << L"\"negotiatedFormat\":\"" << FormatGuidToString(fmt.subtype) << L"\",";
 
         // Available formats: the full set the device's media type handler
@@ -5002,7 +4966,7 @@ void Application::PushSettingsState(bool refreshCaptureDevices)
         m_lastScreenshotPath.clear();
     }
 
-    // Header meta line: real capture resolution, last measured fps,
+    // Header meta line: negotiated capture resolution, measured capture FPS,
     // and end-to-end latency. These come from the running pipeline.
     {
         uint32_t w = 0, h = 0;
@@ -5013,7 +4977,8 @@ void Application::PushSettingsState(bool refreshCaptureDevices)
         }
         std::wstringstream res;
         if (w && h) {
-            res << w << L"×" << h << L" · " << m_currentContentFps << L" fps";
+            res << w << L"×" << h << L" · " << Tr(L"overlay.captureFps")
+                << L" " << m_currentFps;
         } else {
             res << Tr(L"overlay.noSignal");
         }
