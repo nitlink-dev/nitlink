@@ -1,4 +1,5 @@
 #include "capture/capture_device.h"
+#include "capture/dshow_capture.h"
 
 #include <wrl/implements.h>
 #include <iostream>
@@ -23,9 +24,27 @@ struct CaptureDeviceFormatTests {
         return device.m_format;
     }
 
+    static CaptureFormat ReadDShowRate(int64_t interval)
+    {
+        DShowCapture device;
+        device.ReadFrameRateFromInterval(interval);
+        return device.GetOutputFormat();
+    }
+
     static HRESULT WriteRate(CaptureDevice& device, IMFMediaType* output)
     {
         return device.SetOutputFrameRate(output);
+    }
+
+    static void ReadbackRateAndPublish(CaptureDevice& device, IMFMediaType* actual)
+    {
+        device.UpdateFrameRateFromActual(actual);
+        device.PublishFormat();
+    }
+
+    static void ClearPublishedFormat(CaptureDevice& device)
+    {
+        device.ClearPublishedFormat();
     }
 
     static void SeedP010Notice(CaptureDevice& device,
@@ -174,6 +193,78 @@ bool RunChecks()
     bool pass = true;
     const Mode nv12 = {MFVideoFormat_NV12, 3840, 2160, 60, 1};
     const Mode p010 = {MFVideoFormat_P010, 1920, 1080, 60, 1};
+
+    for (const int64_t interval : {83333LL, 166666LL, 333667LL}) {
+        const auto format = Access::ReadDShowRate(interval);
+        pass &= Expect(format.fpsNumerator == 10000000 &&
+                       format.fpsDenominator == static_cast<uint32_t>(interval) &&
+                       format.fps == 10000000 / interval,
+                       "DirectShow publishes the negotiated interval, not default 60/1");
+    }
+    for (const int64_t interval : {0LL, -1LL, INT64_MAX}) {
+        const auto format = Access::ReadDShowRate(interval);
+        pass &= Expect(format.fpsNumerator == 0 && format.fpsDenominator == 1 &&
+                       format.fps == 0,
+                       "invalid or unrepresentable DirectShow rate is unknown");
+    }
+
+    {
+        CaptureDevice device;
+        const auto published = device.GetOutputFormat();
+        pass &= Expect(published.width == 0 && published.height == 0 &&
+                       published.fps == 0 && published.fpsNumerator == 0 &&
+                       published.fpsDenominator == 1 &&
+                       device.GetPresentPacingRateHint() == 0,
+                       "unopened device publishes unknown dimensions and rate");
+        const auto working = Access::Format(device);
+        pass &= Expect(working.width == 3840 && working.height == 2160 &&
+                       working.fps == 60,
+                       "unpublished metadata does not change negotiation defaults");
+    }
+
+    // The output readback must replace a requested 120, including when MF
+    // substitutes another rate or does not report MF_MT_FRAME_RATE at all.
+    for (const Mode actual : {
+             Mode{MFVideoFormat_NV12, 1920, 1080, 120, 1},
+             Mode{MFVideoFormat_NV12, 1920, 1080, 60, 1},
+             Mode{MFVideoFormat_NV12, 1920, 1080, 120000, 1001},
+             Mode{MFVideoFormat_NV12, 1920, 1080, 10000000, 83333},
+             Mode{MFVideoFormat_NV12, 1920, 1080, 0, 1},
+             Mode{MFVideoFormat_NV12, 1920, 1080, 120, 0},
+             Mode{MFVideoFormat_NV12, 1920, 1080, 120, 1, false}}) {
+        CaptureDevice device;
+        auto source = MakeSource({{{{MFVideoFormat_NV12, 1920, 1080, 120, 1}}}});
+        CaptureDevice::OverrideSpec manual;
+        manual.width = 1920;
+        manual.height = 1080;
+        manual.fps = manual.fpsNumerator = 120;
+        pass &= Expect(Access::Negotiate(device, source.Get(), gc553, false, manual),
+                       "manual 1080p120 Auto request selects native SDR mode");
+        pass &= ExpectRate(device, 120, 1, "outgoing request asks for 120/1");
+        ComPtr<IMFMediaType> actualType;
+        Check(MFCreateMediaType(&actualType));
+        if (actual.hasRate) {
+            Check(MFSetAttributeRatio(actualType.Get(), MF_MT_FRAME_RATE,
+                                      actual.numerator, actual.denominator));
+        }
+        Access::ReadbackRateAndPublish(device, actualType.Get());
+        const auto published = device.GetOutputFormat();
+        const bool known = actual.hasRate && actual.numerator > 0 && actual.denominator > 0;
+        pass &= Expect(published.fpsNumerator == (known ? actual.numerator : 0) &&
+                       published.fpsDenominator == (known ? actual.denominator : 1) &&
+                       published.fps == (known ? actual.numerator / actual.denominator : 0),
+                       "published FPS uses actual MF readback, never a missing-rate request fallback");
+        pass &= Expect(device.GetPresentPacingRateHint() ==
+                           (known ? actual.numerator / actual.denominator : 120),
+                       "unknown MF statistics preserve the pre-existing present-cap hint");
+        Access::ClearPublishedFormat(device);
+        const auto cleared = device.GetOutputFormat();
+        pass &= Expect(cleared.width == 0 && cleared.height == 0 &&
+                       cleared.fps == 0 && cleared.fpsNumerator == 0 &&
+                       cleared.fpsDenominator == 1 &&
+                       device.GetPresentPacingRateHint() == 0,
+                       "cleared session cannot publish defaults or stale rate hints");
+    }
 
     for (const UINT32 numerator : {60000u, 30000u, 24000u, 120000u}) {
         CaptureDevice device;

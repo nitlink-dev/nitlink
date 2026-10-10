@@ -19,6 +19,7 @@
 #include "capture_output_policy.h"
 #include "source_cadence.h"
 #include "presentation_state.h"
+#include "present_cap_policy.h"
 #include "discord/discord_rpc.h"
 
 #include <memory>
@@ -441,7 +442,9 @@ private:
     uint32_t m_loopIterations  = 0;
     int      m_lastPresentationMode = -2;  // last DXGI composition mode logged
     bool m_lowLatency = true;   // present-on-arrival (wait-then-read) vs VRR pacing; default ON, toggle Alt+L / F1
-    double m_appliedPresentCapHz = -1.0;  // last cap pushed to the renderer, logged on change only
+    double m_presentCapMonitorHz = 0.0;
+    PresentCapDecision m_presentCapDecision{};
+    std::wstring m_lastPresentCapLog; // policy changes can matter even at the same numeric cap
 
     // App ingest: live card-driver-to-app-callback delivery time, computed
     // each frame as arrivalWallNs - (frame.deviceTimestamp * 100) in ns
@@ -452,8 +455,8 @@ private:
     double   m_mfDeliveryLatencyMs  = 0.0;
     uint32_t m_mfDeliveryLogCounter = 0;   // periodic DebugView throttle
 
-    uint32_t m_currentFps        = 0;   // HDMI signal rate (~60 healthy)
-    uint32_t m_currentContentFps = 0;   // game unique-frame rate (from differ)
+    uint32_t m_currentFps        = 0;   // frames written to the capture buffer per second
+    uint32_t m_currentContentFps = 0;   // changed frames estimated by the GPU differ per second
     uint64_t m_uniqueFrameCount  = 0;
     uint64_t m_skippedFrameCount = 0;   // frames skipped by VRR present pacing (total)
     // Keep skip counts for pacing diagnostics. Capture stalls make iteration
@@ -463,7 +466,7 @@ private:
     // Source frame rate pacing: keeps presents at the measured source rate
     // while the picture is still (see source_cadence.h).
     SourceCadence m_sourceCadence;
-    uint64_t m_presentCount        = 0;   // presents issued by the run loop (total)
+    uint64_t m_presentCount        = 0;   // run-loop Present calls that returned S_OK (total)
     uint32_t m_currentPresentFps   = 0;   // presents per second, sampled with the fps counters
     uint64_t m_cadenceHoldPresents = 0;   // presents issued by the still-picture cadence hold (total)
 

@@ -2,6 +2,7 @@
 #include "dx11_renderer.h"
 #include "renderer/hdr_tone_map.h"
 #include "renderer/hdr_tone_map_hlsl.h"
+#include "renderer/present_cap_clock.h"
 #include <d3dcompiler.h>
 #include <array>
 #include <sstream>
@@ -979,7 +980,7 @@ bool DX11Renderer::Initialize(HWND hwnd, uint32_t width, uint32_t height)
     // VRR present-rate cap (VRR_CAP.txt next to the exe): rate-cap the ALLOW_TEARING
     // present to just under the display's VRR max, so VRR engages (the panel refreshes
     // on present: no vblank wait, no tearing inside the VRR range). File content =
-    // target Hz (default 117). Absent = off. Pairs with the ALLOW_TEARING present.
+    // target Hz (default 117). Absent leaves the rate to application policy.
     if (std::filesystem::exists("VRR_CAP.txt")) {
         m_vrrCapHz = 117.0;
         m_presentCapFromMarker = true;
@@ -1742,7 +1743,9 @@ bool DX11Renderer::CreateGpuTimingQueries()
 bool DX11Renderer::SetPresentCap(double hz)
 {
     if (m_presentCapFromMarker) return false;
-    m_vrrCapHz = (hz > 0.0) ? hz : 0.0;
+    const double cap = (hz > 0.0) ? hz : 0.0;
+    if (cap != m_vrrCapHz) m_presentCapDeadline = {};
+    m_vrrCapHz = cap;
     return true;
 }
 
@@ -1765,7 +1768,7 @@ int DX11Renderer::PresentationMode() const
 
 DX11Renderer::PhaseTimes DX11Renderer::ConsumePhaseTimes()
 {
-    PhaseTimes t{};
+    PhaseTimes t = m_phaseDiagnostics;
     if (m_phaseWaits > 0) {
         t.waitMs   = m_phaseWaitMs   / m_phaseWaits;
         t.uploadMs = m_phaseUploadMs / m_phaseWaits;
@@ -1777,6 +1780,7 @@ DX11Renderer::PhaseTimes DX11Renderer::ConsumePhaseTimes()
     t.presents   = m_phasePresents;
     m_phaseWaitMs = m_phaseUploadMs = m_phasePresentMs = 0.0;
     m_phaseWaits = m_phasePresents = 0;
+    m_phaseDiagnostics = {};
     return t;
 }
 
@@ -1793,8 +1797,9 @@ void DX11Renderer::WaitForFrameReady()
     // Sync already schedules presentation; an additional cap can miss a
     // refresh boundary. This also bypasses diagnostic marker caps under VSync.
     if (!m_vsync && m_vrrCapHz > 0.0) {
+        m_phaseDiagnostics.capWaits++;
         const auto interval = std::chrono::nanoseconds((long long)(1.0e9 / m_vrrCapHz));
-        const auto target   = m_lastPresentTime + interval;
+        const auto target   = m_presentCapDeadline;
         while (std::chrono::steady_clock::now() < target) {
             const auto remain = target - std::chrono::steady_clock::now();
             if (remain > std::chrono::milliseconds(2))
@@ -1802,11 +1807,13 @@ void DX11Renderer::WaitForFrameReady()
             else
                 std::this_thread::yield();
         }
-        m_phaseWaitMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
-        return;
-    }
-    if (m_frameLatencyWaitable) {
-        WaitForSingleObjectEx(m_frameLatencyWaitable, 1000, TRUE);
+        m_presentCapDeadline = AdvancePresentCapDeadline(target, std::chrono::steady_clock::now(), interval);
+    } else if (m_frameLatencyWaitable) {
+        m_phaseDiagnostics.waitableWaits++;
+        const DWORD result = WaitForSingleObjectEx(m_frameLatencyWaitable, 1000, TRUE);
+        if (result == WAIT_TIMEOUT) m_phaseDiagnostics.waitTimeouts++;
+        else if (result == WAIT_FAILED) m_phaseDiagnostics.waitFailed++;
+        else if (result == WAIT_IO_COMPLETION) m_phaseDiagnostics.waitAlerted++;
     }
     m_phaseWaitMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 }
@@ -1814,11 +1821,10 @@ void DX11Renderer::WaitForFrameReady()
 void DX11Renderer::BeginFrame(bool doWait)
 {
     // ============== DXGI 1.3 LOW-LATENCY WAIT ==============
-    // Block until DXGI says "ready for your next frame." If the previous
-    // Present is still working its way to the display, this wait holds the
-    // render thread back so it DOES NOT pile up a queue of stale frames.
-    // The waitable object is signaled the moment DXGI finishes presenting
-    // the previous frame.
+    // Apply the selected present cap, or wait for DXGI queue readiness.
+    // An immediate tearing present can exceed display refresh even when the
+    // queue-ready event is signaled. Both low-latency settings use the same
+    // wait, keeping their original positions relative to capture selection.
     //
     // Timeout is 1000ms: should never actually fire, but a finite value
     // prevents a broken signal from deadlocking the render thread forever.
@@ -1831,9 +1837,7 @@ void DX11Renderer::BeginFrame(bool doWait)
     // before EndFrame's Present in every iteration including the first,
     // the ordering is already correct here. Skipped when doWait==false: the
     // Low-Latency loop already waited via WaitForFrameReady() at the top.
-    if (doWait && m_frameLatencyWaitable) {
-        WaitForSingleObjectEx(m_frameLatencyWaitable, 1000, TRUE);
-    }
+    if (doWait) WaitForFrameReady();
 
     // Frame timer for the averaged "render ms" telemetry. Measured from
     // here (just after the latency wait, the actual *start* of useful work)
@@ -2183,7 +2187,7 @@ bool DX11Renderer::ConsumeDeviceLost()
     return v;
 }
 
-void DX11Renderer::EndFrame()
+bool DX11Renderer::EndFrame()
 {
     // Close this frame's GPU timing window BEFORE Present, so the measured
     // span covers only the work issued between BeginFrame and here. Present
@@ -2214,9 +2218,10 @@ void DX11Renderer::EndFrame()
     FlagIfDeviceLost(hrPresent, L"Present");
     m_phasePresentMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - presentStart).count();
     m_phasePresents++;
-    // Timestamp the present so the VRR present-rate cap (WaitForFrameReady) can pace
-    // the next iteration just under the display's VRR ceiling.
-    m_lastPresentTime = std::chrono::steady_clock::now();
+    m_phaseDiagnostics.lastPresentResult = hrPresent;
+    if (hrPresent == S_OK) m_phaseDiagnostics.presentOk++;
+    else if (SUCCEEDED(hrPresent)) m_phaseDiagnostics.presentStatuses++;
+    else m_phaseDiagnostics.presentFailed++;
 
     // ============== FRAME-TIME TELEMETRY ==============
     // Measure BeginFrame -> Present-returned time and roll it into a sliding
@@ -2246,6 +2251,7 @@ void DX11Renderer::EndFrame()
             m_renderMsCount = 0;
         }
     }
+    return hrPresent == S_OK;
 }
 
 // HDR10 screenshot tonemap: convert one R10G10B10A2_UNORM backbuffer pixel

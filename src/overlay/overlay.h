@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/frame_rate_stats.h"
+
 #include "no_signal_image.h"
 #include <d3d11.h>
 #include <d2d1_1.h>
@@ -32,7 +34,7 @@ public:
         // are not yet populated (first few frames) or query creation
         // failed at startup.
         double       gpuMs            = 0;
-        uint32_t     fps              = 0;   // game content frames per second
+        FrameRateStats frameRates;
         uint32_t     captureWidth     = 0;
         uint32_t     captureHeight    = 0;
         std::wstring deviceName;

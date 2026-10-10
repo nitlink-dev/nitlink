@@ -161,7 +161,21 @@ public:
     // sees a complete, consistent struct instead of a half-updated one.
     CaptureFormat GetOutputFormat() const {
         std::lock_guard<std::mutex> lock(m_formatMutex);
-        return m_publishedFormat;
+        auto format = m_publishedFormat;
+        if (!m_hasPublishedFormat) {
+            // CaptureFormat's negotiation defaults are not an actual format.
+            format.width = format.height = format.fps = format.fpsNumerator = 0;
+            format.fpsDenominator = 1;
+        }
+        return format;
+    }
+    // Preserve the existing automatic present-cap policy when MF omits its
+    // rate. This operational hint is never reported as negotiated/measured FPS.
+    uint32_t GetPresentPacingRateHint() const {
+        std::lock_guard<std::mutex> lock(m_formatMutex);
+        if (!m_hasPublishedFormat) return 0;
+        return m_publishedFormat.fpsNumerator > 0
+            ? m_publishedFormat.fps : m_publishedRateHint;
     }
     std::wstring  GetDeviceName()   const { return m_deviceName; }
     bool HasPublishedFormatForDevice(const DeviceInfo& device) const {
@@ -227,6 +241,7 @@ private:
     void CaptureLoop();
     bool NegotiateFormat(IMFMediaSource* source);
     HRESULT SetOutputFrameRate(IMFMediaType* outputType);
+    void UpdateFrameRateFromActual(IMFMediaType* actualType);
     void UpdateP010SelectionNoticeFromActual(const CaptureFormat& actualFormat);
 
     // Commit the finalized m_format into the mutex-guarded m_publishedFormat.
@@ -249,12 +264,14 @@ private:
     // thread while no capture worker is running. Other threads do NOT read this
     // directly; they read m_publishedFormat via GetOutputFormat().
     CaptureFormat   m_format;
+    uint32_t        m_formatRateHint = 0;
 
     // Thread-safe published copy of m_format, committed by PublishFormat() and
     // read under m_formatMutex by GetOutputFormat(). Decouples the multi-field
     // struct read from the scattered writes so readers never observe a torn
     // (partially updated) value.
     CaptureFormat        m_publishedFormat;
+    uint32_t             m_publishedRateHint = 0;
     mutable std::mutex   m_formatMutex;
     bool                 m_hasPublishedFormat = false;
     std::wstring         m_publishedDeviceName;

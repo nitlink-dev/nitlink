@@ -41,6 +41,8 @@ public:
     bool           ConsumeNeedsReopen() { return m_needsReopen.exchange(false); }
 
 private:
+    friend struct CaptureDeviceFormatTests;
+    void ReadFrameRateFromInterval(int64_t interval);
     std::unique_ptr<DShowGraph> m_impl;
     std::wstring       m_deviceName;
     CaptureFormat      m_format;      // written once in Open, read by render thread

@@ -28,6 +28,8 @@ set(NITLINK_SOURCES
     src/app/game_database.cpp
     src/app/game_database.h
     src/app/source_cadence.h
+    src/app/frame_rate_stats.h
+    src/app/present_cap_policy.h
     src/app/presentation_state.h
     src/app/capture_output_policy.h
     src/app/WebViewSettings.cpp
@@ -59,6 +61,7 @@ set(NITLINK_SOURCES
     src/capture/p010_format_selector.h
     src/renderer/dx11_renderer.cpp
     src/renderer/dx11_renderer.h
+    src/renderer/present_cap_clock.h
     src/renderer/hdr_tone_map.h
     src/renderer/hdr_tone_map_hlsl.h
     src/renderer/window.cpp
@@ -383,6 +386,23 @@ if(BUILD_TESTING)
         ${CMAKE_SOURCE_DIR}/src
     )
     add_test(NAME frame_buffer_activity COMMAND NitLinkFrameBufferActivityTests)
+
+    add_executable(NitLinkFrameRateStatsTests
+        tests/frame_rate_stats_tests.cpp
+        src/capture/frame_buffer.cpp
+        src/app/localization.cpp
+    )
+    target_include_directories(NitLinkFrameRateStatsTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME frame_rate_stats COMMAND NitLinkFrameRateStatsTests)
+
+    add_executable(NitLinkPresentCapPolicyTests tests/present_cap_policy_tests.cpp)
+    target_include_directories(NitLinkPresentCapPolicyTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME present_cap_policy COMMAND NitLinkPresentCapPolicyTests)
+
+    add_executable(NitLinkPresentWaitTests tests/present_wait_tests.cpp src/renderer/dx11_renderer.cpp)
+    target_include_directories(NitLinkPresentWaitTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(NitLinkPresentWaitTests PRIVATE d3d11 dxgi d3dcompiler windowscodecs)
+    add_test(NAME present_wait_paths COMMAND NitLinkPresentWaitTests)
 
     add_executable(NitLinkGc553ProHdrTests
         tests/gc553pro_hdr_source_tests.cpp
