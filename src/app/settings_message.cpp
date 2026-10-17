@@ -225,7 +225,7 @@ std::optional<SettingsMessage> ParseSettingsMessage(std::wstring_view json) {
             return std::nullopt;
         result.text = value->text;
         if (action == L"setLanguage") {
-            if (!OneOf(result.text, {L"system", L"en-US", L"zh-TW", L"zh-CN", L"de-DE"})) return std::nullopt;
+            if (!OneOf(result.text, {L"system", L"en-US", L"zh-TW", L"zh-CN", L"de-DE", L"ko-KR"})) return std::nullopt;
         } else if (action == L"setManualHdmiSource") {
             if (!IsValidManualHdmiSource(std::wstring_view(result.text))) return std::nullopt;
         } else if (action == L"setManualHdmiSourceCustom") {

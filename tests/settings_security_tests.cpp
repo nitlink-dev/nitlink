@@ -56,8 +56,10 @@ int main() {
         const auto simplified = localization.Get(key);
         localization.SetPreference("de-DE");
         const auto german = localization.Get(key);
-        Expect(english != key && chinese != key && simplified != key && german != key &&
-               english != chinese && english != simplified && english != german,
+        localization.SetPreference("ko-KR");
+        const auto korean = localization.Get(key);
+        Expect(english != key && chinese != key && simplified != key && german != key && korean != key &&
+               english != chinese && english != simplified && english != german && english != korean,
                "all native locale tables define each settings/config warning");
     }
     localization.SetPreference("zh-CN");
@@ -74,6 +76,13 @@ int main() {
     Expect(localization.Format(L"toast.p010SelectionFallback",
            {{L"width", L"1920"}, {L"height", L"1080"}, {L"fps", L"60"}}).find(L"1920x1080 @ 60") != std::wstring::npos,
            "German native placeholders are substituted");
+    localization.SetPreference("ko-KR");
+    Expect(localization.PreferenceName() == "ko-KR" && localization.LocaleName() == L"ko-KR" &&
+           std::wstring(localization.UiFontFamily()) == L"Malgun Gothic",
+           "Korean selects native locale and font");
+    Expect(localization.Format(L"toast.p010SelectionFallback",
+           {{L"width", L"1920"}, {L"height", L"1080"}, {L"fps", L"60"}}).find(L"1920x1080 @ 60") != std::wstring::npos,
+           "Korean native placeholders are substituted");
     localization.SetPreference("system");
     using namespace NitLink::WebViewPolicy;
     for (auto action : {L"ready", L"cycleNoSignalMode", L"chooseNoSignalImage",
@@ -129,6 +138,7 @@ int main() {
     for (auto valid : {
         LR"({"action":"setLanguage","value":"system"})", LR"({"action":"setLanguage","value":"en-US"})",
         LR"({"action":"setLanguage","value":"zh-CN"})", LR"({"action":"setLanguage","value":"de-DE"})",
+        LR"({"action":"setLanguage","value":"ko-KR"})",
         LR"({"action":"setLanguage","value":"zh-TW"})", LR"({"action":"setNoSignalMode","value":"image"})",
         LR"({"action":"setNoSignalMode","value":"default"})", LR"({"action":"setNoSignalFit","value":"contain"})",
         LR"({"action":"setNoSignalFit","value":"cover"})", LR"({"action":"setNoSignalFit","value":"stretch"})",

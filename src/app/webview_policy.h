@@ -24,6 +24,7 @@ inline constexpr Resource Resources[] = {
     {MenuUri, L"nitlink-menu.html", L"text/html; charset=utf-8", ResourceKind::Document},
     {L"https://nitlink.invalid/locales/en-US.js", L"locales/en-US.js", L"text/javascript; charset=utf-8", ResourceKind::Script},
     {L"https://nitlink.invalid/locales/de-DE.js", L"locales/de-DE.js", L"text/javascript; charset=utf-8", ResourceKind::Script},
+    {L"https://nitlink.invalid/locales/ko-KR.js", L"locales/ko-KR.js", L"text/javascript; charset=utf-8", ResourceKind::Script},
     {L"https://nitlink.invalid/locales/zh-CN.js", L"locales/zh-CN.js", L"text/javascript; charset=utf-8", ResourceKind::Script},
     {L"https://nitlink.invalid/locales/zh-TW.js", L"locales/zh-TW.js", L"text/javascript; charset=utf-8", ResourceKind::Script},
     {L"https://nitlink.invalid/assets/menu/menu.js", L"assets/menu/menu.js", L"text/javascript; charset=utf-8", ResourceKind::Script},

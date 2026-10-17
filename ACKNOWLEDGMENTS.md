@@ -78,3 +78,6 @@ project authorship or maintainership.
   and automatic system-language selection.
 - **German (de-DE):** [Noka123](https://github.com/Noka123) (`@Noka123`) — translation
   and automatic system-language selection.
+- **Korean (ko-KR):** [iorph](https://github.com/i0rph) (`@i0rph`) — translation,
+  automatic system-language selection, and localization review with real-device
+  validation.

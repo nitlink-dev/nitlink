@@ -158,6 +158,7 @@ window.NitLinkLocales['zh-CN'] = {
   'language.label': '语言',
   'language.system': '系统默认',
   'language.german': 'Deutsch',
+  'language.korean': '한국어',
   'language.simplifiedChinese': '简体中文',
   'language.english': 'English',
   'language.traditionalChinese': '繁體中文',

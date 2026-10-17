@@ -97,7 +97,7 @@ void OtherEditorLocalesTest(WebViewSettings& host, ICoreWebView2* view,
         host.PostMessage(state.str());
     };
     const auto firstMessage = messages.size();
-    for (const auto locale : {L"en-US", L"zh-TW", L"zh-CN", L"de-DE"}) {
+    for (const auto locale : {L"en-US", L"zh-TW", L"zh-CN", L"de-DE", L"ko-KR"}) {
         pushOther(locale, L"Steam Deck");
         const auto ready = std::wstring(L"document.documentElement.lang === '") + locale +
             L"' && document.getElementById('meta-hdmi-source').textContent === 'Steam Deck'";
@@ -442,6 +442,9 @@ int main(int argc, char** argv) {
         host.PostMessage(LR"({"state":{"locale":"de-DE","languagePreference":"de-DE"}})");
         Check(PumpUntil([&] { return Script(view, L"document.documentElement.lang === 'de-DE' && document.querySelector('[data-i18n=\"nav.keys\"]').textContent === window.NitLinkLocales['de-DE']['nav.keys']") == L"true"; }),
               "German resource loads through the native resource allowlist");
+        host.PostMessage(LR"({"state":{"locale":"ko-KR","languagePreference":"ko-KR"}})");
+        Check(PumpUntil([&] { return Script(view, L"document.documentElement.lang === 'ko-KR' && document.querySelector('[data-i18n=\"nav.keys\"]').textContent === window.NitLinkLocales['ko-KR']['nav.keys']") == L"true"; }),
+              "Korean resource loads through the native resource allowlist");
         host.PostMessage(LR"({"state":{"locale":"zh-TW","languagePreference":"zh-TW","audioVolume":0.75}})");
         Check(PumpUntil([&] { return Script(view, L"document.documentElement.lang") == L"\"zh-TW\""; }),
               "native state reaches trusted page");
@@ -640,7 +643,7 @@ int main(int argc, char** argv) {
         const auto initialLocale = Script(recovered, L"document.documentElement.lang");
         std::wcout << L"Restart locale and browser languages: " <<
             Script(recovered, L"[document.documentElement.lang,navigator.languages]") << L'\n';
-        Check(initialLocale == L"\"en-US\"" || initialLocale == L"\"zh-TW\"" || initialLocale == L"\"de-DE\"",
+        Check(initialLocale == L"\"en-US\"" || initialLocale == L"\"zh-TW\"" || initialLocale == L"\"de-DE\"" || initialLocale == L"\"ko-KR\"",
               "restarted menu starts in a supported system locale");
         bool readyReceived = false;
         for (size_t i = messagesBeforeCrash; i < messages.size(); ++i) {

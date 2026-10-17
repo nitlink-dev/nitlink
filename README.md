@@ -232,7 +232,7 @@ cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-Output at `out/build/x64-Release/NitLink.exe` (VS) or `build/Release/NitLink.exe` (CLI). The build copies `nitlink-menu.html`, `locales/en-US.js`, `locales/zh-TW.js`, `locales/zh-CN.js`, `locales/de-DE.js`, the complete `assets/menu` folder and `third_party/nis/NIS_Scaler.h` beside the `.exe`, preserving their subfolders (all are needed at runtime).
+Output at `out/build/x64-Release/NitLink.exe` (VS) or `build/Release/NitLink.exe` (CLI). The build copies `nitlink-menu.html`, `locales/en-US.js`, `locales/zh-TW.js`, `locales/zh-CN.js`, `locales/de-DE.js`, `locales/ko-KR.js`, the complete `assets/menu` folder and `third_party/nis/NIS_Scaler.h` beside the `.exe`, preserving their subfolders (all are needed at runtime).
 
 ---
 

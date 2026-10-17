@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const context = vm.createContext({window: {}});
-const locales = ['en-US', 'zh-TW', 'zh-CN', 'de-DE'];
+const locales = ['en-US', 'zh-TW', 'zh-CN', 'de-DE', 'ko-KR'];
 for (const locale of locales) {
   vm.runInContext(fs.readFileSync(path.join(root, 'locales', locale + '.js'), 'utf8'), context);
 }
@@ -29,9 +29,9 @@ const nativeTables = [...cpp.matchAll(/const Table& (\w+)Table\(\)\s*\{([\s\S]*?
   const values = new Map([...body.matchAll(/\{L"([^"]+)", L"((?:\\.|[^"\\])*)"\}/g)].map(m => [m[1], m[2]]));
   return {name, values};
 });
-assert.equal(nativeTables.length, 4);
+assert.equal(nativeTables.length, 5);
 for (const {name, values} of nativeTables) {
   assert.deepEqual([...values.keys()].sort(), [...nativeTables[0].values.keys()].sort(), name + ': native key coverage');
   for (const [key, value] of values) assert.deepEqual(placeholders(value), placeholders(nativeTables[0].values.get(key)), name + ': ' + key);
 }
-console.log(`Validated ${keys.length} menu strings and ${nativeTables[0].values.size} native strings in all four languages.`);
+console.log(`Validated ${keys.length} menu strings and ${nativeTables[0].values.size} native strings in all five languages.`);
