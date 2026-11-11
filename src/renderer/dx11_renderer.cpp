@@ -1,4 +1,5 @@
 #include "../common/input_limits.h"
+#include "../common/precise_sleep.h"
 #include "dx11_renderer.h"
 #include "renderer/hdr_tone_map.h"
 #include "renderer/hdr_tone_map_hlsl.h"
@@ -1812,10 +1813,12 @@ void DX11Renderer::WaitForFrameReady()
         m_phaseDiagnostics.capWaits++;
         const auto interval = std::chrono::nanoseconds((long long)(1.0e9 / m_vrrCapHz));
         const auto target   = m_presentCapDeadline;
+        // PreciseSleep, not sleep_for: a plain 1 ms sleep rounds up to the
+        // ~15.6 ms Windows tick and held this loop to ~64 Hz (see header).
         while (std::chrono::steady_clock::now() < target) {
             const auto remain = target - std::chrono::steady_clock::now();
             if (remain > std::chrono::milliseconds(2))
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                PreciseSleep(std::chrono::milliseconds(1));
             else
                 std::this_thread::yield();
         }
