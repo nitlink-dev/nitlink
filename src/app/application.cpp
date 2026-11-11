@@ -1164,7 +1164,7 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
     // matches only the paired hardware audio endpoint per Elgato's naming
     // convention. Wave Link channels don't carry the specific device name.
     const std::wstring audioHint = DeriveAudioHint(m_currentDeviceInfo.name);
-    if (!m_audioRouter->Initialize(audioHint)) {
+    if (!m_audioRouter->Initialize(audioHint, m_currentDeviceInfo.symbolicLink)) {
         AppLog(L"Initialize: AudioRouter has no endpoints yet (worker keeps retrying)");
         if (m_audioRouter->LastCaptureError() == E_ACCESSDENIED) {
             // The Windows Microphone privacy switch blocks every capture
@@ -4936,7 +4936,7 @@ bool Application::SwitchCaptureDevice(const std::wstring& deviceName)
     if (m_audioRouter) {
         const std::wstring newAudioHint = DeriveAudioHint(newDevice.name);
         m_audioRouter->Shutdown();
-        if (!m_audioRouter->Initialize(newAudioHint)) {
+        if (!m_audioRouter->Initialize(newAudioHint, newDevice.symbolicLink)) {
             AppLog(L"SwitchCaptureDevice: AudioRouter has no endpoints yet (worker keeps retrying)");
         } else {
             AppLog(L"SwitchCaptureDevice: AudioRouter re-bound to '" + newAudioHint + L"'");

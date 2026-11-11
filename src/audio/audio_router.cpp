@@ -1,5 +1,7 @@
 #include "audio_router.h"
+#include "capture_endpoint_match.h"
 #include <functiondiscoverykeys_devpkey.h>
+#include <cfgmgr32.h>
 #include <propvarutil.h>
 #include <mmreg.h>
 #include <avrt.h>
@@ -13,10 +15,68 @@
 #include <memory>
 #include <sstream>
 
+#include <initguid.h>
+#include <devpkey.h>
+
 #pragma comment(lib, "Ole32.lib")
 #pragma comment(lib, "Avrt.lib")
+#pragma comment(lib, "Cfgmgr32.lib")
 
 namespace NitLink {
+
+// Container ID of a device node; GUID_NULL when it has none.
+static GUID DevNodeContainerId(DEVINST devInst)
+{
+    GUID container = GUID_NULL;
+    DEVPROPTYPE type = 0;
+    ULONG size = sizeof(container);
+    if (CM_Get_DevNode_PropertyW(devInst, &DEVPKEY_Device_ContainerId, &type,
+                                 reinterpret_cast<PBYTE>(&container), &size, 0) != CR_SUCCESS ||
+        type != DEVPROP_TYPE_GUID) {
+        return GUID_NULL;
+    }
+    return container;
+}
+
+// Container ID of the physical device behind a device-interface path (the
+// video capture device's symbolic link). Windows gives every function of
+// one USB device (video, audio, HID) the same container ID.
+static GUID ContainerIdForInterface(const std::wstring& interfacePath)
+{
+    if (interfacePath.empty()) return GUID_NULL;
+    wchar_t instanceId[MAX_DEVICE_ID_LEN] = {};
+    DEVPROPTYPE type = 0;
+    ULONG size = sizeof(instanceId);
+    if (CM_Get_Device_Interface_PropertyW(interfacePath.c_str(), &DEVPKEY_Device_InstanceId,
+                                          &type, reinterpret_cast<PBYTE>(instanceId),
+                                          &size, 0) != CR_SUCCESS ||
+        type != DEVPROP_TYPE_STRING) {
+        return GUID_NULL;
+    }
+    DEVINST devInst = 0;
+    if (CM_Locate_DevNodeW(&devInst, instanceId, CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS) {
+        return GUID_NULL;
+    }
+    return DevNodeContainerId(devInst);
+}
+
+// The PC's own container ID (the root device node's), shared by every
+// built-in device and therefore never a pairing signal.
+static GUID ComputerContainerId()
+{
+    DEVINST root = 0;
+    if (CM_Locate_DevNodeW(&root, nullptr, CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS) {
+        return GUID_NULL;
+    }
+    return DevNodeContainerId(root);
+}
+
+static std::wstring GuidText(const GUID& g)
+{
+    wchar_t text[64] = {};
+    StringFromGUID2(g, text, 64);
+    return text;
+}
 
 // Reference time helpers (Windows uses 100-ns units)
 static constexpr REFERENCE_TIME REFTIMES_PER_SEC      = 10000000;
@@ -296,13 +356,20 @@ AudioRouter::~AudioRouter()
     if (m_stopEvent)    CloseHandle(m_stopEvent);
 }
 
-bool AudioRouter::Initialize(const std::wstring& nameHint)
+bool AudioRouter::Initialize(const std::wstring& nameHint,
+                             const std::wstring& videoSymbolicLink)
 {
     AudioLog(L"Initialize: begin");
 
     // Re-initialising over a live router is legal (SwitchCaptureDevice does
     // exactly that); make sure the previous worker is gone first.
     Shutdown();
+
+    m_videoContainer = ContainerIdForInterface(videoSymbolicLink);
+    m_computerContainer = ComputerContainerId();
+    AudioLog(L"Initialize: video device container " + GuidText(m_videoContainer) +
+             (IsPairableContainer(m_videoContainer, m_computerContainer)
+                  ? L" (usable for audio pairing)" : L" (not usable for audio pairing)"));
 
     m_focusGate = {};
     m_exclusivePermitted = false;
@@ -349,6 +416,8 @@ bool AudioRouter::FindCaptureDevice(const std::wstring& nameHint, ComPtr<IMMDevi
     UINT count = 0;
     collection->GetCount(&count);
 
+    std::vector<ComPtr<IMMDevice>> devices;
+    std::vector<CaptureEndpointInfo> endpoints;
     for (UINT i = 0; i < count; i++) {
         ComPtr<IMMDevice> device;
         if (FAILED(collection->Item(i, &device))) continue;
@@ -356,28 +425,37 @@ bool AudioRouter::FindCaptureDevice(const std::wstring& nameHint, ComPtr<IMMDevi
         ComPtr<IPropertyStore> props;
         if (FAILED(device->OpenPropertyStore(STGM_READ, &props))) continue;
 
-        PROPVARIANT name;
-        PropVariantInit(&name);
-        props->GetValue(PKEY_Device_FriendlyName, &name);
-
-        std::wstring friendlyName = (name.vt == VT_LPWSTR && name.pwszVal) ? name.pwszVal : L"";
-        PropVariantClear(&name);
-
-        // Match against hint (case-insensitive substring)
-        if (!nameHint.empty()) {
-            std::wstring lowerName = friendlyName;
-            std::wstring lowerHint = nameHint;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::towlower);
-            std::transform(lowerHint.begin(), lowerHint.end(), lowerHint.begin(), ::towlower);
-            if (lowerName.find(lowerHint) != std::wstring::npos) {
-                outDevice = device;
-                AudioLog(L"Matched capture device: " + friendlyName);
-                return true;
-            }
+        CaptureEndpointInfo info;
+        PROPVARIANT value;
+        PropVariantInit(&value);
+        if (SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &value)) &&
+            value.vt == VT_LPWSTR && value.pwszVal) {
+            info.friendlyName = value.pwszVal;
         }
+        PropVariantClear(&value);
+        if (SUCCEEDED(props->GetValue(PKEY_Device_ContainerId, &value)) &&
+            value.vt == VT_CLSID && value.puuid) {
+            info.containerId = *value.puuid;
+        }
+        PropVariantClear(&value);
+
+        devices.push_back(device);
+        endpoints.push_back(std::move(info));
     }
 
-    return false;
+    const int chosen = ChooseCaptureEndpoint(endpoints, nameHint,
+                                             m_videoContainer, m_computerContainer);
+    if (chosen < 0) return false;
+    outDevice = devices[static_cast<size_t>(chosen)];
+    const auto& picked = endpoints[static_cast<size_t>(chosen)];
+    std::wstring lowerName = picked.friendlyName, lowerHint = nameHint;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::towlower);
+    std::transform(lowerHint.begin(), lowerHint.end(), lowerHint.begin(), ::towlower);
+    const bool byName = !lowerHint.empty() && lowerName.find(lowerHint) != std::wstring::npos;
+    AudioLog(std::wstring(L"Matched capture device") +
+             (byName ? L": " : L" on the same physical device as the video: ") +
+             picked.friendlyName);
+    return true;
 }
 
 bool AudioRouter::SetupCapture()

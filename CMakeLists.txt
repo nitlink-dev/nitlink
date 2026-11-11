@@ -504,4 +504,8 @@ if(BUILD_TESTING)
     target_include_directories(NitLinkDevicePickTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(NitLinkDevicePickTests PRIVATE mf mfplat mfuuid ole32)
     add_test(NAME device_pick COMMAND NitLinkDevicePickTests)
+
+    add_executable(NitLinkCaptureEndpointMatchTests tests/capture_endpoint_match_tests.cpp)
+    target_include_directories(NitLinkCaptureEndpointMatchTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME capture_endpoint_match COMMAND NitLinkCaptureEndpointMatchTests)
 endif()
