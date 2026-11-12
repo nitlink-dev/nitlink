@@ -176,7 +176,43 @@ static bool OverrideFormatAcceptsSubtype(const std::wstring& format,
         return IsEqualGUID(subtype, MFVideoFormat_RGB32) ||
                IsEqualGUID(subtype, MFVideoFormat_ARGB32);
     }
+    if (format == L"YUY2") return IsEqualGUID(subtype, MFVideoFormat_YUY2);
     return false;
+}
+
+// Manual formats that name what the card sends rather than what the
+// renderer draws. Picking one pins that native type on the source.
+// Only YUY2 today: NitLink takes it untouched and repacks it to NV12.
+// GUID_NULL for every other format string.
+static GUID NativePinSubtype(const std::wstring& format)
+{
+    if (format == L"YUY2") return MFVideoFormat_YUY2;
+    return GUID_NULL;
+}
+
+static std::wstring SubtypeToName(const GUID& g);
+
+void ConvertYuy2ToNv12(const uint8_t* src, uint32_t srcPitch,
+                       uint32_t width, uint32_t height, uint8_t* dst)
+{
+    uint8_t* dstY = dst;
+    uint8_t* dstUV = dst + static_cast<size_t>(width) * height;
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t* row = src + static_cast<size_t>(y) * srcPitch;
+        uint8_t* outY = dstY + static_cast<size_t>(y) * width;
+        for (uint32_t x = 0; x < width; ++x) outY[x] = row[2 * x];
+    }
+    // YUY2 pixel pair = Y0 U Y1 V. Average each chroma sample with the
+    // one directly below it (NV12 sites chroma between the two rows).
+    for (uint32_t cy = 0; cy < height / 2; ++cy) {
+        const uint8_t* r0 = src + static_cast<size_t>(2 * cy) * srcPitch;
+        const uint8_t* r1 = r0 + srcPitch;
+        uint8_t* outUV = dstUV + static_cast<size_t>(cy) * width;
+        for (uint32_t x = 0; x + 1 < width; x += 2) {
+            outUV[x]     = static_cast<uint8_t>((r0[2 * x + 1] + r1[2 * x + 1] + 1) >> 1);
+            outUV[x + 1] = static_cast<uint8_t>((r0[2 * x + 3] + r1[2 * x + 3] + 1) >> 1);
+        }
+    }
 }
 
 CaptureDevice::CaptureDevice() = default;
@@ -255,6 +291,20 @@ bool CaptureDevice::Open(const DeviceInfo& device)
     if (!NegotiateFormat(m_source.Get())) {
         DebugLog(L"Failed to negotiate native format");
         return false;
+    }
+
+    // Manual YUY2: lock the card to that native mode BEFORE the
+    // reader exists. Left alone, Media Foundation picks the native type
+    // itself when it builds the conversion to NV12/RGB32, so the user's
+    // choice would have no effect. A null result (no matching mode, or the
+    // source refused it) leaves the attempts list empty below, which sends
+    // negotiation down the existing "reverted to automatic" fallback.
+    const GUID nativePinSubtype = NativePinSubtype(m_overrideSpec.format);
+    const bool nativePinRequested = !IsEqualGUID(nativePinSubtype, GUID_NULL);
+    m_repackYuy2 = false;
+    ComPtr<IMFMediaType> pinnedNativeType;
+    if (nativePinRequested) {
+        pinnedNativeType = PinNativeMediaType(m_source.Get(), nativePinSubtype);
     }
 
     // Enable video processing in the source reader. This inserts a Media
@@ -387,7 +437,42 @@ bool CaptureDevice::Open(const DeviceInfo& device)
         else if (m_overrideSpec.format == L"BGRA" ||
                  m_overrideSpec.format == L"RGB32") overrideGuid = MFVideoFormat_RGB32;
 
-        if (!IsEqualGUID(overrideGuid, GUID_NULL)) {
+        if (nativePinRequested) {
+            // The renderer still receives NV12; only the card's wire format
+            // is fixed. Request the pinned mode's exact size and rate: for a
+            // format-only override (size Auto) the pin resolved them to that
+            // format's largest, fastest mode.
+            //
+            // YUY2 is requested as-is (no Media Foundation transform) and
+            // repacked to NV12 in CaptureLoop. Media Foundation's YUY2 -> RGB
+            // converter is not used: measured on a generic USB card whose
+            // YUY2 type says progressive, the driver still flags every
+            // sample as interlaced, so the converter deinterlaced (every
+            // other line interpolated, 540 real lines at 1080p).
+            UINT32 pinW = 0, pinH = 0;
+            if (pinnedNativeType &&
+                SUCCEEDED(MFGetAttributeSize(pinnedNativeType.Get(), MF_MT_FRAME_SIZE,
+                                             &pinW, &pinH))) {
+                const MediaFrameRate pinRate =
+                    GetFrameRateFromMediaType(pinnedNativeType.Get());
+                m_format.width = pinW;
+                m_format.height = pinH;
+                SetFormatFrameRate(m_format, pinRate.numerator,
+                                   pinRate.denominator);
+                attempts.push_back({ MFVideoFormat_YUY2,
+                    L"YUY2 untouched (NitLink repacks to NV12)" });
+                std::wstringstream ss;
+                ss << L"Manual override: card format " << m_overrideSpec.format
+                   << L" at " << m_format.width << L"x" << m_format.height
+                   << L" @ " << FrameRateText(m_format.fpsNumerator,
+                                              m_format.fpsDenominator);
+                DebugLog(ss.str());
+            } else {
+                DebugLog(L"Manual override: card format " +
+                         m_overrideSpec.format +
+                         L" could not be pinned at the requested size/rate");
+            }
+        } else if (!IsEqualGUID(overrideGuid, GUID_NULL)) {
             attempts.push_back({ overrideGuid, L"manual override format" });
             std::wstringstream ss;
             ss << L"Manual override: " << m_format.width << L"x"
@@ -437,6 +522,26 @@ bool CaptureDevice::Open(const DeviceInfo& device)
     // m_format on success (subtype + stride) and uses the current
     // m_format.width/height/fps for the request; both get rewritten
     // before each invocation of this lambda.
+    //
+    // pinActive / nativeMatchesPin: with a pinned YUY2 mode, an output
+    // attempt only counts if the reader is still reading that native mode.
+    bool pinActive = static_cast<bool>(pinnedNativeType);
+    auto nativeMatchesPin = [&]() -> bool {
+        ComPtr<IMFMediaType> nativeNow;
+        GUID nowSubtype{};
+        UINT32 nowW = 0, nowH = 0, pinW = 0, pinH = 0;
+        return SUCCEEDED(m_reader->GetNativeMediaType(
+                   MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+                   MF_SOURCE_READER_CURRENT_TYPE_INDEX, &nativeNow)) &&
+               nativeNow &&
+               SUCCEEDED(nativeNow->GetGUID(MF_MT_SUBTYPE, &nowSubtype)) &&
+               IsEqualGUID(nowSubtype, nativePinSubtype) &&
+               SUCCEEDED(MFGetAttributeSize(nativeNow.Get(), MF_MT_FRAME_SIZE,
+                                            &nowW, &nowH)) &&
+               SUCCEEDED(MFGetAttributeSize(pinnedNativeType.Get(),
+                                            MF_MT_FRAME_SIZE, &pinW, &pinH)) &&
+               nowW == pinW && nowH == pinH;
+    };
     auto tryAttempts = [&](bool enforceOverrideDims) -> bool {
         for (const auto& attempt : attempts) {
             ComPtr<IMFMediaType> outputType;
@@ -525,6 +630,31 @@ bool CaptureDevice::Open(const DeviceInfo& device)
                         }
                     }
                 }
+                // Pinned native format: confirm the reader built its
+                // conversion from the pinned mode and did not swap in a
+                // different native mode. If it did, set the native type
+                // through the reader itself and request the output again.
+                if (pinActive && !nativeMatchesPin()) {
+                    DebugLog(L"Reader switched away from the pinned card format; "
+                             L"re-pinning through IMFSourceReaderEx");
+                    ComPtr<IMFSourceReaderEx> readerEx;
+                    DWORD streamFlags = 0;
+                    const bool repinned =
+                        SUCCEEDED(m_reader.As(&readerEx)) &&
+                        SUCCEEDED(readerEx->SetNativeMediaType(
+                            MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+                            pinnedNativeType.Get(), &streamFlags)) &&
+                        SUCCEEDED(m_reader->SetCurrentMediaType(
+                            MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr,
+                            outputType.Get())) &&
+                        nativeMatchesPin();
+                    if (!repinned) {
+                        DebugLog(std::wstring(L"Output format ") + attempt.name +
+                                 L" could not keep the pinned card format; "
+                                 L"rejecting attempt");
+                        continue;
+                    }
+                }
                 DebugLog(std::wstring(L"Output format accepted: ") + attempt.name);
                 m_format.subtype = attempt.subtype;
                 if (attempt.subtype == MFVideoFormat_NV12) {
@@ -567,6 +697,8 @@ bool CaptureDevice::Open(const DeviceInfo& device)
         } else {
             SetFormatFrameRate(m_format, nativeBestFps, 1);
         }
+        // Automatic negotiation may use any native mode again.
+        pinActive = false;
         rebuildStandardAttempts();
         gotFormat = tryAttempts(/*enforceOverrideDims=*/ false);
     }
@@ -586,7 +718,10 @@ bool CaptureDevice::Open(const DeviceInfo& device)
         if (FAILED(actualType->GetGUID(MF_MT_SUBTYPE, &subtype)) ||
             FAILED(MFGetAttributeSize(actualType.Get(), MF_MT_FRAME_SIZE, &w, &h))) return false;
         PixelLayout layout;
-        if (subtype == MFVideoFormat_NV12) layout = PixelLayout::Nv12;
+        // Only the manual YUY2 attempt ever requests YUY2 output; CaptureLoop
+        // repacks those frames, so downstream sizing is NV12.
+        const bool repackYuy2 = (subtype == MFVideoFormat_YUY2);
+        if (subtype == MFVideoFormat_NV12 || repackYuy2) layout = PixelLayout::Nv12;
         else if (subtype == MFVideoFormat_P010) layout = PixelLayout::P010;
         else if (subtype == MFVideoFormat_RGB32 || subtype == MFVideoFormat_ARGB32) layout = PixelLayout::Bgra;
         else return false;
@@ -613,6 +748,20 @@ bool CaptureDevice::Open(const DeviceInfo& device)
         // never the requested 120. Delivery FPS is measured independently.
         UpdateFrameRateFromActual(actualType.Get());
         m_format.subtype = subtype;
+        // Only set when NitLink converts the card's format itself, so the
+        // F1 info line reads "YUY2 -> NV12" for a manual YUY2 pick and is
+        // unchanged for every other path.
+        m_format.nativeSubtype = repackYuy2 ? MFVideoFormat_YUY2 : GUID_NULL;
+        if (repackYuy2) {
+            // The renderer, frame buffer and detectors see plain NV12.
+            m_format.subtype = MFVideoFormat_NV12;
+            m_repackYuy2 = true;
+            m_repackWidth = w;
+            m_repackHeight = h;
+            m_repackBuffer.assign(frameBytes, 0);
+            DebugLog(L"YUY2 frames are repacked to NV12 by NitLink "
+                     L"(no Media Foundation conversion)");
+        }
 
         // Detect row order empirically. MF_MT_DEFAULT_STRIDE is a signed int32
         // where negative = bottom-up (legacy GDI convention, older drivers),
@@ -1035,6 +1184,107 @@ bool CaptureDevice::NegotiateFormat(IMFMediaSource* source)
     m_format.height = 1080;
     SetFormatFrameRate(m_format, 60, 1);
     return true;
+}
+
+ComPtr<IMFMediaType> CaptureDevice::PinNativeMediaType(IMFMediaSource* source,
+                                                       const GUID& subtype) const
+{
+    if (!source) return nullptr;
+
+    ComPtr<IMFPresentationDescriptor> pd;
+    if (FAILED(source->CreatePresentationDescriptor(&pd))) return nullptr;
+    DWORD streamCount = 0;
+    if (FAILED(pd->GetStreamDescriptorCount(&streamCount))) return nullptr;
+
+    const uint32_t wantW = m_overrideSpec.width;
+    const uint32_t wantH = m_overrideSpec.height;
+    const uint32_t wantNum = m_overrideSpec.fpsNumerator;
+    const uint32_t wantDen = m_overrideSpec.fpsDenominator > 0
+        ? m_overrideSpec.fpsDenominator : 1;
+    const uint32_t wantFps = m_overrideSpec.fps;
+
+    for (DWORD i = 0; i < streamCount; i++) {
+        BOOL selected = FALSE;
+        ComPtr<IMFStreamDescriptor> sd;
+        if (FAILED(pd->GetStreamDescriptorByIndex(i, &selected, &sd)) ||
+            !sd || !selected) continue;
+
+        ComPtr<IMFMediaTypeHandler> handler;
+        if (FAILED(sd->GetMediaTypeHandler(&handler)) || !handler) continue;
+        GUID major{};
+        if (FAILED(handler->GetMajorType(&major)) ||
+            !IsEqualGUID(major, MFMediaType_Video)) continue;
+
+        DWORD typeCount = 0;
+        if (FAILED(handler->GetMediaTypeCount(&typeCount))) continue;
+
+        ComPtr<IMFMediaType> best;
+        UINT32 bestW = 0, bestH = 0;
+        MediaFrameRate bestRate;
+        for (DWORD t = 0; t < typeCount; t++) {
+            ComPtr<IMFMediaType> type;
+            if (FAILED(handler->GetMediaTypeByIndex(t, &type)) || !type) continue;
+
+            GUID typeSubtype{};
+            if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &typeSubtype)) ||
+                !IsEqualGUID(typeSubtype, subtype)) continue;
+
+            // Only modes whose media type says progressive: the repack
+            // copies whole frames and never deinterlaces. This is the same
+            // rule the F1 picker uses to list modes (a missing attribute
+            // counts as interlaced there too).
+            UINT32 interlace = MFVideoInterlace_Unknown;
+            if (FAILED(type->GetUINT32(MF_MT_INTERLACE_MODE, &interlace)) ||
+                interlace != MFVideoInterlace_Progressive) continue;
+
+            UINT32 w = 0, h = 0;
+            if (FAILED(MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, &w, &h)) ||
+                w == 0 || h == 0) continue;
+            if (wantW > 0 && wantH > 0 && (w != wantW || h != wantH)) continue;
+
+            const MediaFrameRate rate = GetFrameRateFromMediaType(type.Get());
+            if (rate.numerator == 0 || rate.denominator == 0) continue;
+            if (wantNum > 0) {
+                if (static_cast<uint64_t>(rate.numerator) * wantDen !=
+                    static_cast<uint64_t>(wantNum) * rate.denominator) continue;
+            } else if (wantFps > 0) {
+                if (rate.numerator / rate.denominator != wantFps) continue;
+            }
+
+            // Any axis left on Auto resolves to the largest, then fastest.
+            const bool better = !best || w > bestW ||
+                (w == bestW &&
+                 static_cast<uint64_t>(rate.numerator) * bestRate.denominator >
+                 static_cast<uint64_t>(bestRate.numerator) * rate.denominator);
+            if (better) {
+                best = type;
+                bestW = w;
+                bestH = h;
+                bestRate = rate;
+            }
+        }
+
+        if (!best) {
+            DebugLog(L"Native pin: no " + SubtypeToName(subtype) +
+                     L" mode matches the requested size/rate");
+            return nullptr;
+        }
+        const HRESULT hr = handler->SetCurrentMediaType(best.Get());
+        if (FAILED(hr)) {
+            std::wstringstream ss;
+            ss << L"Native pin: source refused " << SubtypeToName(subtype)
+               << L" (HRESULT 0x" << std::hex << hr << L")";
+            DebugLog(ss.str());
+            return nullptr;
+        }
+        std::wstringstream ss;
+        ss << L"Native pin: " << SubtypeToName(subtype) << L" "
+           << bestW << L"x" << bestH << L" @ "
+           << FrameRateText(bestRate.numerator, bestRate.denominator);
+        DebugLog(ss.str());
+        return best;
+    }
+    return nullptr;
 }
 
 // Map a Media Foundation video subtype GUID to a human-readable name.
@@ -1478,10 +1728,26 @@ void CaptureDevice::CaptureLoop()
                 if (FAILED(buffer->Unlock())) DebugLog(L"Media buffer unlock failed");
                 continue;
             }
+            // Manual YUY2: repack the untouched card frame to NV12 here so the
+            // rest of NitLink only ever sees its normal NV12 path.
+            const uint8_t* frameData = rawData;
+            DWORD frameLen = currentLen;
+            if (m_repackYuy2) {
+                const uint64_t yuy2Bytes =
+                    static_cast<uint64_t>(m_repackWidth) * m_repackHeight * 2;
+                if (currentLen < yuy2Bytes || m_repackBuffer.empty()) {
+                    if (FAILED(buffer->Unlock())) DebugLog(L"Media buffer unlock failed");
+                    continue;
+                }
+                ConvertYuy2ToNv12(rawData, m_repackWidth * 2, m_repackWidth,
+                                  m_repackHeight, m_repackBuffer.data());
+                frameData = m_repackBuffer.data();
+                frameLen = static_cast<DWORD>(m_repackBuffer.size());
+            }
             if (!loggedFirstFrame) {
                 const CaptureFormat fmt = GetOutputFormat();
                 std::wstringstream ss;
-                ss << L"First frame received: " << currentLen << L" bytes for "
+                ss << L"First frame received: " << frameLen << L" bytes for "
                    << fmt.width << L"x" << fmt.height
                    << L" (expected BGRA: " << (fmt.width * fmt.height * 4)
                    << L", expected NV12: " << (fmt.width * fmt.height * 3 / 2) << L")";
@@ -1518,7 +1784,7 @@ void CaptureDevice::CaptureLoop()
             if (cb) {
                 const int64_t arrivalWallNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
-                cb(rawData, currentLen, timestamp, arrivalWallNs, deviceTs);
+                cb(frameData, frameLen, timestamp, arrivalWallNs, deviceTs);
             }
             if (FAILED(buffer->Unlock())) DebugLog(L"Media buffer unlock failed");
         }

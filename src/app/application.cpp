@@ -4957,6 +4957,7 @@ const wchar_t* FormatGuidToString(const GUID& g)
     if (g == MFVideoFormat_NV12)  return L"NV12";
     if (g == MFVideoFormat_P010)  return L"P010";
     if (g == MFVideoFormat_RGB32) return L"BGRA";
+    if (g == MFVideoFormat_YUY2)  return L"YUY2";
     return L"Unknown";
 }
 
@@ -5068,6 +5069,9 @@ void Application::PushSettingsState(bool refreshCaptureDevices)
         js << L"\"negotiatedFpsNumerator\":" << fmt.fpsNumerator << L",";
         js << L"\"negotiatedFpsDenominator\":" << fmt.fpsDenominator << L",";
         js << L"\"negotiatedFormat\":\"" << FormatGuidToString(fmt.subtype) << L"\",";
+        // The card's own format when NitLink converts it (YUY2 repacked to
+        // NV12); "Unknown" on every other path.
+        js << L"\"nativeFormat\":\"" << FormatGuidToString(fmt.nativeSubtype) << L"\",";
 
         // Available formats: the full set the device's media type handler
         // exposed at Open time. Drives the F1 Source picker's cascade

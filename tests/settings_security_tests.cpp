@@ -161,7 +161,8 @@ int main() {
         LR"({"width":3840,"height":2160,"fps":0,"fpsNumerator":0,"fpsDenominator":1,"format":"P010"})",
         LR"({"width":0,"height":0,"fps":0,"fpsNumerator":0,"fpsDenominator":1,"format":"NV12"})",
         LR"({"width":1920,"height":1080,"fps":0,"fpsNumerator":0,"fpsDenominator":1,"format":""})",
-        LR"({"width":1920,"height":1080,"fps":0,"fpsNumerator":0,"fpsDenominator":1,"format":"BGRA"})"}) {
+        LR"({"width":1920,"height":1080,"fps":0,"fpsNumerator":0,"fpsDenominator":1,"format":"BGRA"})",
+        LR"({"width":1920,"height":1080,"fps":0,"fpsNumerator":0,"fpsDenominator":1,"format":"YUY2"})"}) {
         const auto automatic = ParseSettingsMessage(prefix + valid + L"}");
         Expect(automatic && automatic->format.fps == 0 && automatic->format.fpsNumerator == 0 &&
                automatic->format.fpsDenominator == 1, "menu resolution/framerate Auto rational payload");
@@ -176,7 +177,8 @@ int main() {
         LR"({"width":1920.5,"height":1080,"fps":60,"format":"NV12"})",
         LR"({"width":"1920","height":1080,"fps":60,"format":"NV12"})",
         LR"({"width":1920,"height":1080,"fps":1001,"format":"NV12"})",
-        LR"({"width":1920,"height":1080,"fps":60,"format":"YUY2"})",
+        LR"({"width":1920,"height":1080,"fps":60,"format":"H264"})",
+        LR"({"width":1920,"height":1080,"fps":60,"format":"MJPG"})",
         LR"({"width":1920,"height":1080,"fps":60,"format":"NV12","extra":0})",
         LR"({"width":1920,"height":1080,"fps":60,"format":"NV12","fpsNumerator":60})",
         LR"({"width":1920,"height":1080,"fps":60,"format":"NV12","fpsDenominator":1})",

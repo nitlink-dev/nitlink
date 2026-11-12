@@ -193,7 +193,7 @@ std::string ConfigUtf8(const std::wstring& value) {
 }
 bool IsFormat(const std::wstring& value) {
     return value.empty() || value == L"NV12" || value == L"P010" ||
-        value == L"BGRA" || value == L"RGB32";
+        value == L"BGRA" || value == L"RGB32" || value == L"YUY2";
 }
 void DeleteRecoveryCopy(const std::wstring& recovery) {
     for (int attempt = 0; attempt < 5; ++attempt) {
@@ -620,7 +620,7 @@ bool Config::Save(const std::string& path)
     file << "# Fields per entry: device, width, height, fps, fps_numerator,\n";
     file << "# fps_denominator, format\n";
     file << "# Numeric fields at 0 (or empty for format) mean Auto.\n";
-    file << "# Format value: NV12 / P010 / BGRA / (empty for Auto).\n";
+    file << "# Format value: NV12 / P010 / BGRA / YUY2 / (empty for Auto).\n";
     if (!captureFormatOverrides.empty()) {
         file << "capture_override.count = " << captureFormatOverrides.size() << "\n";
         int idx = 0;
