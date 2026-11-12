@@ -331,15 +331,14 @@
         pop.appendChild(row);
       };
 
-      // The renderer supports three pixel formats end-to-end:
+      // Formats the picker offers. The renderer draws three end-to-end:
       //   P010 (HDR10), NV12 (SDR YUV), BGRA (SDR RGB).
-      // YUY2 / UYVY / RGB24 / ARGB32 are exposed by some capture cards
-      // (the 4K Pro publishes YUY2 at 1080p exclusively, for example)
-      // but routing them through the renderer would require shader
-      // paths the renderer does not implement. Filter the cascade
-      // strictly to renderable formats so the user is never offered a
-      // combination that would fail with a confusing toast.
-      const RENDERABLE = new Set(['P010', 'NV12', 'BGRA']);
+      // YUY2 is a card-side format: picking it locks the card to its
+      // YUY2 mode and NitLink repacks the frames to NV12 itself. Generic
+      // USB cards often publish YUY2, and the 4K Pro publishes YUY2 at
+      // 1080p exclusively. UYVY / RGB24 / ARGB32 / MJPG etc. stay hidden:
+      // no tested path.
+      const SELECTABLE_FORMATS = new Set(['P010', 'NV12', 'BGRA', 'YUY2']);
 
       // Cascade helpers. Each derives its set from lastAvailableFormats
       // filtered by the upstream override selections AND by renderable-
@@ -352,7 +351,7 @@
       const uniqueResolutions = () => {
         const map = new Map();
         lastAvailableFormats.forEach(f => {
-          if (!RENDERABLE.has(f.format)) return;
+          if (!SELECTABLE_FORMATS.has(f.format)) return;
           map.set(`${f.width}x${f.height}`, { w: f.width, h: f.height });
         });
         return [...map.entries()].sort((a, b) => b[1].w - a[1].w);
@@ -392,7 +391,7 @@
         const format = typeof lastOverride.format === 'string'
           ? lastOverride.format : '';
         const candidates = lastAvailableFormats.filter(f =>
-          RENDERABLE.has(f.format) &&
+          SELECTABLE_FORMATS.has(f.format) &&
           (!w || f.width === w) &&
           (!h || f.height === h) &&
           Number(f.fps) === legacyFps &&
@@ -419,7 +418,7 @@
         const w = lastOverride.width, h = lastOverride.height;
         if (!w || !h) return [];
         lastAvailableFormats.forEach(f => {
-          if (!RENDERABLE.has(f.format)) return;
+          if (!SELECTABLE_FORMATS.has(f.format)) return;
           if (f.width === w && f.height === h) set.set(rateKey(f), f);
         });
         return [...set.values()].sort((a, b) =>
@@ -434,7 +433,7 @@
         const selectedRate = overrideRateKey();
         if (!w || !h) return [];
         lastAvailableFormats.forEach(f => {
-          if (!RENDERABLE.has(f.format)) return;
+          if (!SELECTABLE_FORMATS.has(f.format)) return;
           if (f.width === w && f.height === h) {
             if (selectedRate === '0/1' || rateKey(f) === selectedRate) set.add(f.format);
           }
@@ -543,7 +542,7 @@
             // satisfy (e.g. switching from 1080p+240fps to 4K when
             // 4K@240 does not exist).
             const validAtNewRes = lastAvailableFormats.filter(f =>
-              RENDERABLE.has(f.format) &&
+              SELECTABLE_FORMATS.has(f.format) &&
               f.width === w && f.height === h);
             const selectedRate = overrideRateKey();
             const fpsStillValid = selectedRate !== '0/1' &&
@@ -569,7 +568,7 @@
               ? lastAvailableFormats.find(f =>
                   f.width === lastOverride.width &&
                   f.height === lastOverride.height &&
-                  RENDERABLE.has(f.format) && rateKey(f) === newVal)
+                  SELECTABLE_FORMATS.has(f.format) && rateKey(f) === newVal)
               : null;
             const newFps = selected ? selected.fps : 0;
             const newFpsNumerator = selected
@@ -583,7 +582,7 @@
             let format = lastOverride.format;
             if (format) {
               const validAtCombo = lastAvailableFormats.filter(f =>
-                RENDERABLE.has(f.format) &&
+                SELECTABLE_FORMATS.has(f.format) &&
                 f.width === lastOverride.width &&
                 f.height === lastOverride.height &&
                 (!newVal || rateKey(f) === newVal));
@@ -982,7 +981,14 @@
       setText('meta-resolution', hasNegotiatedFormat
         ? `${s.negotiatedWidth}x${s.negotiatedHeight} / ${rateText} ${t('units.fps')}`
         : t('meta.none'));
-      setText('meta-format', s.negotiatedFormat === 'Unknown' ? t('value.auto') : s.negotiatedFormat);
+      // Show the card's own format when NitLink converts it ("YUY2 -> NV12"),
+      // so a manual YUY2 pick is visibly in effect.
+      const outputFormat = s.negotiatedFormat === 'Unknown' ? t('value.auto') : s.negotiatedFormat;
+      const cardFormat = typeof s.nativeFormat === 'string' &&
+        s.nativeFormat !== 'Unknown' && s.nativeFormat !== s.negotiatedFormat &&
+        s.negotiatedFormat !== 'Unknown' ? s.nativeFormat : '';
+      setText('meta-format', cardFormat
+        ? `${cardFormat} → ${outputFormat}` : outputFormat);
       setText('meta-link', s.linkText);
       setText('meta-latency', s.latencyText);
 

@@ -47,6 +47,10 @@ struct CaptureFormat {
     // blacks (treating full as limited) or washes out the image
     // (treating limited as full).
     bool     fullRange = false;
+    // The card's own format when NitLink converts it before the renderer:
+    // YUY2 for a manual YUY2 pick (repacked to NV12, so `subtype` is NV12).
+    // GUID_NULL on every other path, including the DirectShow backend.
+    GUID     nativeSubtype{};
 };
 
 struct DeviceInfo {
@@ -97,6 +101,12 @@ struct AvailableFormat {
 // 0 if the driver does not populate the attribute).
 using FrameCallback = std::function<void(const uint8_t*, uint32_t, int64_t, int64_t, uint64_t)>;
 
+// Repack one packed YUY2 (Y0 U Y1 V) frame into NV12: luma copied exactly,
+// 4:2:2 chroma averaged over each row pair to 4:2:0. No range or matrix
+// change. `dst` must hold width * height * 3 / 2 bytes; width must be even.
+void ConvertYuy2ToNv12(const uint8_t* src, uint32_t srcPitch,
+                       uint32_t width, uint32_t height, uint8_t* dst);
+
 class CaptureDevice {
 public:
     CaptureDevice();
@@ -126,11 +136,16 @@ public:
     // automatic (using NegotiateFormat's native-best + standard
     // attempts) and sets m_fallbackNotice so the JSON state push can
     // surface a toast.
+    //
+    // "YUY2" is a card-side (native) format the renderer does not draw
+    // directly. Open() locks the source to that progressive native mode,
+    // takes it untouched and CaptureLoop repacks it to NV12 (see
+    // m_repackYuy2).
     struct OverrideSpec {
         uint32_t     width  = 0;
         uint32_t     height = 0;
         uint32_t     fps    = 0;
-        std::wstring format;  // "NV12" / "P010" / "BGRA" / "" for Auto
+        std::wstring format;  // "NV12" / "P010" / "BGRA" / "YUY2" / "" for Auto
         uint32_t     fpsNumerator = 0;
         uint32_t     fpsDenominator = 1;
 
@@ -240,6 +255,14 @@ private:
 
     void CaptureLoop();
     bool NegotiateFormat(IMFMediaSource* source);
+    // Find the source's progressive native media type with this subtype
+    // that matches the manual override's size and rate (size Auto =
+    // largest mode, rate Auto = fastest), and make it the source stream's
+    // current type.
+    // Returns the pinned type, or null when no mode matches or the source
+    // refuses it. Does not touch m_format.
+    ComPtr<IMFMediaType> PinNativeMediaType(IMFMediaSource* source,
+                                            const GUID& subtype) const;
     HRESULT SetOutputFrameRate(IMFMediaType* outputType);
     void UpdateFrameRateFromActual(IMFMediaType* actualType);
     void UpdateP010SelectionNoticeFromActual(const CaptureFormat& actualFormat);
@@ -330,6 +353,22 @@ private:
     // P010, preventing a failed attempt followed by SDR fallback from showing
     // a stale native-mode notice.
     P010SelectionNotice m_p010SelectionNotice;
+
+    // Manual YUY2: the reader hands over the card's YUY2 untouched and
+    // CaptureLoop repacks each frame to NV12 in m_repackBuffer before the
+    // frame callback. Media Foundation's own YUY2 -> RGB converter is avoided
+    // on purpose: some generic USB cards flag every YUY2 sample as
+    // interlaced although the media type says progressive
+    // (MFSampleExtension_Interlaced; observed on a Redragon 4K HD Video
+    // Capture), and the converter then deinterlaces, keeping only half
+    // the real lines.
+    // The repack changes no sample values; colour range is decided from
+    // the media type like every other format. Set in Open() before
+    // StartCapture; read only by the capture thread afterwards.
+    bool                 m_repackYuy2 = false;
+    uint32_t             m_repackWidth = 0;
+    uint32_t             m_repackHeight = 0;
+    std::vector<uint8_t> m_repackBuffer;
 
     // Optional DirectShow capture backend, created only when USE_DSHOW.txt is
     // present next to the exe. When non-null, every public method delegates to

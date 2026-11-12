@@ -85,6 +85,17 @@ int main()
     if (invalidLoaded.noSignalMode != "default" ||
         invalidLoaded.noSignalFit != "contain") return 16;
 
+    // The card-side manual format YUY2 survives a save/load.
+    {
+        NitLink::Config formats;
+        formats.captureFormatOverrides[L"USB Capture A"] = {1920, 1080, 60, L"YUY2", 60, 1};
+        if (!formats.Save(path.string())) return 20;
+        NitLink::Config formatsLoaded;
+        if (!formatsLoaded.Load(path.string()) ||
+            formatsLoaded.GetOverride(L"USB Capture A").format != L"YUY2" ||
+            formatsLoaded.GetOverride(L"USB Capture A").fpsNumerator != 60) return 21;
+    }
+
     if (!std::filesystem::remove(path, ec) && std::filesystem::exists(path)) {
         return 17;
     }

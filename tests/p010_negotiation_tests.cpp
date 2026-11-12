@@ -4,6 +4,7 @@
 #include "app/capture_output_policy.h"
 
 #include <wrl/implements.h>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -82,6 +83,19 @@ struct CaptureDeviceFormatTests {
     {
         return device.HasPublishedFormatForDevice(info);
     }
+
+    static ComPtr<IMFMediaType> Pin(CaptureDevice& device,
+                                    IMFMediaSource* source, const GUID& subtype,
+                                    const CaptureDevice::OverrideSpec& overrideSpec)
+    {
+        device.SetFormatOverride(overrideSpec);
+        return device.PinNativeMediaType(source, subtype);
+    }
+
+    static CaptureDevice::OverrideSpec Override(const CaptureDevice& device)
+    {
+        return device.m_overrideSpec;
+    }
 };
 
 } // namespace NitLink
@@ -132,6 +146,7 @@ struct Mode {
     UINT32 numerator;
     UINT32 denominator;
     bool hasRate = true;
+    UINT32 interlace = MFVideoInterlace_Unknown;  // Unknown leaves MF_MT_INTERLACE_MODE unset
 };
 
 struct Stream {
@@ -155,6 +170,9 @@ ComPtr<IMFMediaSource> MakeSource(const std::vector<Stream>& streams)
             if (mode.hasRate) {
                 Check(MFSetAttributeRatio(type.Get(), MF_MT_FRAME_RATE,
                                          mode.numerator, mode.denominator));
+            }
+            if (mode.interlace != MFVideoInterlace_Unknown) {
+                Check(type->SetUINT32(MF_MT_INTERLACE_MODE, mode.interlace));
             }
             rawTypes.push_back(type.Get());
             ownedTypes.push_back(type);
@@ -457,6 +475,159 @@ bool RunChecks()
         source = MakeSource({{{nv12}}});
         pass &= Expect(Access::Negotiate(device, source.Get(), name, true),
                        "existing generic fallback behavior unchanged");
+    }
+
+    // YUY2 -> NV12 repack: luma copied exactly, chroma averaged per row pair.
+    {
+        const uint8_t yuy2[] = {
+            10, 100, 20, 150,   30, 110, 40, 160,   // row 0: Y0 U Y1 V | Y0 U Y1 V
+            50, 102, 60, 154,   70, 114, 80, 166,   // row 1
+        };
+        uint8_t nv12[4 * 2 * 3 / 2] = {};
+        ConvertYuy2ToNv12(yuy2, 8, 4, 2, nv12);
+        const uint8_t expected[] = {10, 20, 30, 40, 50, 60, 70, 80,
+                                    101, 152, 112, 163};
+        pass &= Expect(std::equal(std::begin(expected), std::end(expected), nv12),
+                       "YUY2 repack keeps every luma sample and averages chroma rows");
+    }
+
+    // Manual YUY2: the picked progressive native mode is locked on the
+    // source. Mode list mirrors a generic USB card that publishes YUY2 and
+    // MJPEG; the larger MJPEG mode must never be picked for a YUY2 override.
+    {
+        constexpr UINT32 kProgressive = MFVideoInterlace_Progressive;
+        const std::vector<Stream> usbCard = {{{
+            {MFVideoFormat_YUY2, 1280, 720, 60, 1, true, kProgressive},
+            {MFVideoFormat_YUY2, 1920, 1080, 30, 1, true, kProgressive},
+            {MFVideoFormat_YUY2, 1920, 1080, 60, 1, true, kProgressive},
+            {MFVideoFormat_MJPG, 1920, 1080, 60, 1, true, kProgressive},
+            {MFVideoFormat_MJPG, 2560, 1440, 60, 1, true, kProgressive},
+        }}};
+        const auto expectPinned = [&](IMFMediaType* pinned, IMFMediaSource* source,
+                                      const GUID& subtype, UINT32 width, UINT32 height,
+                                      UINT32 fps, const char* label) {
+            ComPtr<IMFPresentationDescriptor> pd;
+            ComPtr<IMFStreamDescriptor> sd;
+            ComPtr<IMFMediaTypeHandler> handler;
+            ComPtr<IMFMediaType> current;
+            BOOL selected = FALSE;
+            GUID currentSubtype{};
+            UINT32 w = 0, h = 0, num = 0, den = 0;
+            const bool ok = pinned &&
+                SUCCEEDED(source->CreatePresentationDescriptor(&pd)) &&
+                SUCCEEDED(pd->GetStreamDescriptorByIndex(0, &selected, &sd)) &&
+                SUCCEEDED(sd->GetMediaTypeHandler(&handler)) &&
+                SUCCEEDED(handler->GetCurrentMediaType(&current)) &&
+                SUCCEEDED(current->GetGUID(MF_MT_SUBTYPE, &currentSubtype)) &&
+                SUCCEEDED(MFGetAttributeSize(current.Get(), MF_MT_FRAME_SIZE, &w, &h)) &&
+                SUCCEEDED(MFGetAttributeRatio(current.Get(), MF_MT_FRAME_RATE, &num, &den)) &&
+                IsEqualGUID(currentSubtype, subtype) && w == width && h == height &&
+                den != 0 && num / den == fps;
+            return Expect(ok, label);
+        };
+
+        {
+            CaptureDevice device;
+            auto source = MakeSource(usbCard);
+            CaptureDevice::OverrideSpec spec;
+            spec.width = 1920; spec.height = 1080;
+            spec.fps = 30; spec.fpsNumerator = 30; spec.fpsDenominator = 1;
+            spec.format = L"YUY2";
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= expectPinned(pinned.Get(), source.Get(), MFVideoFormat_YUY2,
+                                 1920, 1080, 30,
+                                 "YUY2 1080p30 pick honours the exact rate");
+        }
+        {
+            CaptureDevice device;
+            auto source = MakeSource(usbCard);
+            CaptureDevice::OverrideSpec spec;
+            spec.format = L"YUY2";  // size and rate Auto
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= expectPinned(pinned.Get(), source.Get(), MFVideoFormat_YUY2,
+                                 1920, 1080, 60,
+                                 "YUY2 with size/rate Auto picks the largest, fastest YUY2 mode");
+        }
+        {
+            CaptureDevice device;
+            auto source = MakeSource(usbCard);
+            CaptureDevice::OverrideSpec spec;
+            spec.width = 1920; spec.height = 1080;
+            spec.format = L"YUY2";  // rate Auto
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= expectPinned(pinned.Get(), source.Get(), MFVideoFormat_YUY2,
+                                 1920, 1080, 60,
+                                 "YUY2 1080p with rate Auto picks 60 over 30");
+        }
+        {
+            CaptureDevice device;
+            auto source = MakeSource(usbCard);
+            CaptureDevice::OverrideSpec spec;
+            spec.width = 2560; spec.height = 1440;
+            spec.format = L"YUY2";  // 1440p exists only as MJPEG
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= Expect(!pinned, "YUY2 at a size the card only has in MJPEG is not pinned");
+        }
+
+        // Interlacing is decided by the media type alone: the repack never
+        // deinterlaces, so only modes typed progressive may be pinned.
+        {
+            CaptureDevice device;
+            auto source = MakeSource({{{
+                {MFVideoFormat_YUY2, 1920, 1080, 60, 1, true,
+                 MFVideoInterlace_FieldInterleavedUpperFirst},
+            }}});
+            CaptureDevice::OverrideSpec spec;
+            spec.format = L"YUY2";
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= Expect(!pinned, "interlaced YUY2 mode is not pinned");
+        }
+        {
+            CaptureDevice device;
+            auto source = MakeSource({{{
+                {MFVideoFormat_YUY2, 1920, 1080, 60, 1},  // interlace mode not set
+            }}});
+            CaptureDevice::OverrideSpec spec;
+            spec.format = L"YUY2";
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= Expect(!pinned, "YUY2 mode without an interlace mode is not pinned");
+        }
+        {
+            CaptureDevice device;
+            auto source = MakeSource({{{
+                {MFVideoFormat_YUY2, 1920, 1080, 30, 1, true, kProgressive},
+                {MFVideoFormat_YUY2, 1920, 1080, 60, 1, true,
+                 MFVideoInterlace_MixedInterlaceOrProgressive},
+            }}});
+            CaptureDevice::OverrideSpec spec;
+            spec.format = L"YUY2";  // rate Auto would prefer 60
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, spec);
+            pass &= expectPinned(pinned.Get(), source.Get(), MFVideoFormat_YUY2,
+                                 1920, 1080, 30,
+                                 "rate Auto skips a faster mixed-interlace mode for the progressive one");
+        }
+        {
+            // A legacy integer-only rate is resolved by NegotiateFormat
+            // before the pin. 59 must land on the card's 60000/1001 YUY2.
+            CaptureDevice device;
+            auto source = MakeSource({{{
+                {MFVideoFormat_YUY2, 1920, 1080, 60000, 1001, true, kProgressive},
+                {MFVideoFormat_MJPG, 1920, 1080, 60, 1, true, kProgressive},
+            }}});
+            CaptureDevice::OverrideSpec spec;
+            spec.width = 1920; spec.height = 1080; spec.fps = 59;
+            spec.format = L"YUY2";
+            pass &= Expect(Access::Negotiate(device, source.Get(), L"Generic capture card",
+                                             false, spec),
+                           "legacy 59 FPS YUY2 override negotiates");
+            const auto resolved = Access::Override(device);
+            pass &= Expect(resolved.fpsNumerator == 60000 && resolved.fpsDenominator == 1001,
+                           "legacy 59 FPS YUY2 resolves to native 60000/1001");
+            auto pinned = Access::Pin(device, source.Get(), MFVideoFormat_YUY2, resolved);
+            pass &= expectPinned(pinned.Get(), source.Get(), MFVideoFormat_YUY2,
+                                 1920, 1080, 59,
+                                 "resolved legacy YUY2 rate pins the 60000/1001 mode");
+        }
     }
     return pass;
 }
