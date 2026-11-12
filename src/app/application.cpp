@@ -1,4 +1,5 @@
 #include "../common/input_limits.h"
+#include "../common/precise_sleep.h"
 #include "application.h"
 #include "capture_device_names.h"
 #include "WebViewSettings.h"
@@ -2878,10 +2879,11 @@ void Application::Run()
             // Small sleep to not spin the CPU. Tuned to be short enough that
             // the wake happens well before the next capture frame arrives (capture
             // worker delivers at ~16.6ms intervals for 60Hz HDMI), but long
-            // enough to drop CPU usage meaningfully.
+            // enough to drop CPU usage meaningfully. PreciseSleep: a plain
+            // sleep_for(2 ms) rounds up to the ~15.6 ms Windows tick.
             m_skippedFrameCount++;
             m_consecutiveSkips++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            PreciseSleep(std::chrono::milliseconds(2));
             continue;
         }
 
