@@ -40,10 +40,16 @@ public:
     // there is no "first capture device found" behaviour, because matching a
     // random microphone would be worse than reporting no audio.
     //
+    // videoSymbolicLink: the video capture device's interface path. When the
+    // name hint matches nothing, the endpoint on the same physical device
+    // (same Windows container ID) is used instead; see
+    // capture_endpoint_match.h for the rule and its exclusions.
+    //
     // Returns whether the first endpoint-open attempt succeeded. A false
     // return does not mean audio is dead for the run: the worker stays alive
     // and keeps retrying, so plugging the card back in recovers on its own.
-    bool Initialize(const std::wstring& captureDeviceNameHint = L"Elgato");
+    bool Initialize(const std::wstring& captureDeviceNameHint = L"Elgato",
+                    const std::wstring& videoSymbolicLink = L"");
     void Shutdown();
 
     void SetVolume(float volume); // 0.0 - 1.0
@@ -167,6 +173,14 @@ private:
     std::chrono::steady_clock::time_point m_lastDrift{};
 
     std::wstring m_nameHint = L"Elgato";
+    // Container IDs for the same-physical-device fallback. Resolved in
+    // Initialize() before the worker starts; a lookup that failed there is
+    // retried by the worker in FindCaptureDevice on every setup and recovery
+    // attempt. Only the worker touches them after Initialize().
+    std::wstring m_videoSymbolicLink;
+    GUID m_videoContainer{};
+    GUID m_computerContainer{};
+    bool m_containerAmbiguityLogged = false;
 
     ComPtr<IMMDeviceEnumerator> m_enumerator;
     ComPtr<IMMNotificationClient> m_notifier;
