@@ -174,9 +174,13 @@ private:
 
     std::wstring m_nameHint = L"Elgato";
     // Container IDs for the same-physical-device fallback. Resolved in
-    // Initialize() before the worker starts; read-only afterwards.
+    // Initialize() before the worker starts; a lookup that failed there is
+    // retried by the worker in FindCaptureDevice on every setup and recovery
+    // attempt. Only the worker touches them after Initialize().
+    std::wstring m_videoSymbolicLink;
     GUID m_videoContainer{};
     GUID m_computerContainer{};
+    bool m_containerAmbiguityLogged = false;
 
     ComPtr<IMMDeviceEnumerator> m_enumerator;
     ComPtr<IMMNotificationClient> m_notifier;

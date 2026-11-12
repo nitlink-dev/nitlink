@@ -365,8 +365,10 @@ bool AudioRouter::Initialize(const std::wstring& nameHint,
     // exactly that); make sure the previous worker is gone first.
     Shutdown();
 
+    m_videoSymbolicLink = videoSymbolicLink;
     m_videoContainer = ContainerIdForInterface(videoSymbolicLink);
     m_computerContainer = ComputerContainerId();
+    m_containerAmbiguityLogged = false;
     AudioLog(L"Initialize: video device container " + GuidText(m_videoContainer) +
              (IsPairableContainer(m_videoContainer, m_computerContainer)
                   ? L" (usable for audio pairing)" : L" (not usable for audio pairing)"));
@@ -409,6 +411,19 @@ void AudioRouter::Shutdown()
 
 bool AudioRouter::FindCaptureDevice(const std::wstring& nameHint, ComPtr<IMMDevice>& outDevice)
 {
+    // A container lookup that failed in Initialize (device interface not
+    // ready yet, for example) is retried on every setup and recovery attempt
+    // instead of keeping the empty ID.
+    if (IsEqualGUID(m_videoContainer, GUID_NULL) && !m_videoSymbolicLink.empty()) {
+        m_videoContainer = ContainerIdForInterface(m_videoSymbolicLink);
+        if (!IsEqualGUID(m_videoContainer, GUID_NULL)) {
+            AudioLog(L"Video device container resolved on retry: " + GuidText(m_videoContainer));
+        }
+    }
+    if (IsEqualGUID(m_computerContainer, GUID_NULL)) {
+        m_computerContainer = ComputerContainerId();
+    }
+
     ComPtr<IMMDeviceCollection> collection;
     HRESULT hr = m_enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection);
     if (FAILED(hr)) return false;
@@ -443,18 +458,28 @@ bool AudioRouter::FindCaptureDevice(const std::wstring& nameHint, ComPtr<IMMDevi
         endpoints.push_back(std::move(info));
     }
 
-    const int chosen = ChooseCaptureEndpoint(endpoints, nameHint,
-                                             m_videoContainer, m_computerContainer);
-    if (chosen < 0) return false;
-    outDevice = devices[static_cast<size_t>(chosen)];
-    const auto& picked = endpoints[static_cast<size_t>(chosen)];
-    std::wstring lowerName = picked.friendlyName, lowerHint = nameHint;
-    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::towlower);
-    std::transform(lowerHint.begin(), lowerHint.end(), lowerHint.begin(), ::towlower);
-    const bool byName = !lowerHint.empty() && lowerName.find(lowerHint) != std::wstring::npos;
+    const CaptureEndpointChoice choice = ChooseCaptureEndpoint(
+        endpoints, nameHint, m_videoContainer, m_computerContainer);
+    if (choice.index < 0) {
+        // Logged once per Initialize: the worker retries this every interval.
+        if (!choice.ambiguousContainerMatches.empty() && !m_containerAmbiguityLogged) {
+            std::wstring names;
+            for (int i : choice.ambiguousContainerMatches) {
+                if (!names.empty()) names += L"; ";
+                names += endpoints[static_cast<size_t>(i)].friendlyName;
+            }
+            AudioLog(L"Not pairing by container: " +
+                     std::to_wstring(choice.ambiguousContainerMatches.size()) +
+                     L" capture endpoints share the video device's container (" +
+                     names + L")");
+            m_containerAmbiguityLogged = true;
+        }
+        return false;
+    }
+    outDevice = devices[static_cast<size_t>(choice.index)];
     AudioLog(std::wstring(L"Matched capture device") +
-             (byName ? L": " : L" on the same physical device as the video: ") +
-             picked.friendlyName);
+             (choice.byName ? L": " : L" on the same physical device as the video: ") +
+             endpoints[static_cast<size_t>(choice.index)].friendlyName);
     return true;
 }
 
