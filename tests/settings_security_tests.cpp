@@ -83,6 +83,14 @@ int main() {
     Expect(localization.Format(L"toast.p010SelectionFallback",
            {{L"width", L"1920"}, {L"height", L"1080"}, {L"fps", L"60"}}).find(L"1920x1080 @ 60") != std::wstring::npos,
            "Korean native placeholders are substituted");
+    localization.SetPreference("en-US");
+    const auto englishStarting = localization.Get(L"toast.settingsStarting");
+    localization.SetPreference("tr-TR");
+    Expect(localization.PreferenceName() == "tr-TR" && localization.LocaleName() == L"tr-TR" &&
+           std::wstring(localization.UiFontFamily()) == L"Segoe UI",
+           "Turkish selects its menu locale and the default font");
+    Expect(localization.Get(L"toast.settingsStarting") == englishStarting,
+           "Turkish native text uses the English table");
     localization.SetPreference("system");
     using namespace NitLink::WebViewPolicy;
     for (auto action : {L"ready", L"cycleNoSignalMode", L"chooseNoSignalImage",
@@ -139,6 +147,7 @@ int main() {
         LR"({"action":"setLanguage","value":"system"})", LR"({"action":"setLanguage","value":"en-US"})",
         LR"({"action":"setLanguage","value":"zh-CN"})", LR"({"action":"setLanguage","value":"de-DE"})",
         LR"({"action":"setLanguage","value":"ko-KR"})",
+        LR"({"action":"setLanguage","value":"tr-TR"})",
         LR"({"action":"setLanguage","value":"zh-TW"})", LR"({"action":"setNoSignalMode","value":"image"})",
         LR"({"action":"setNoSignalMode","value":"default"})", LR"({"action":"setNoSignalFit","value":"contain"})",
         LR"({"action":"setNoSignalFit","value":"cover"})", LR"({"action":"setNoSignalFit","value":"stretch"})",

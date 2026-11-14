@@ -46,6 +46,12 @@ static void ConfigTests(const std::filesystem::path& dir) {
     Config koreanReload;
     Check(koreanReload.Load(path.string()) && koreanReload.language == "ko-KR",
           "Korean preference survives restart");
+    Write(path, "language = tr-TR\n");
+    Check(config.Load(path.string()) && config.language == "tr-TR", "load Turkish preference");
+    Check(config.Save(path.string()), "save Turkish preference");
+    Config turkishReload;
+    Check(turkishReload.Load(path.string()) && turkishReload.language == "tr-TR",
+          "Turkish preference survives restart");
     config = Config{};
     Write(path, "audio_volume = nan\npip_opacity = inf\nnis_sharpness = -inf\nwindow_width = 444junk\npip_x = 23junk\n");
     Check(config.Load(path.string()), "load malformed values");

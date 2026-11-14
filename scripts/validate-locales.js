@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const context = vm.createContext({window: {}});
-const locales = ['en-US', 'zh-TW', 'zh-CN', 'de-DE', 'ko-KR'];
+const locales = ['en-US', 'zh-TW', 'zh-CN', 'de-DE', 'ko-KR', 'tr-TR'];
 for (const locale of locales) {
   vm.runInContext(fs.readFileSync(path.join(root, 'locales', locale + '.js'), 'utf8'), context);
 }
@@ -34,4 +34,4 @@ for (const {name, values} of nativeTables) {
   assert.deepEqual([...values.keys()].sort(), [...nativeTables[0].values.keys()].sort(), name + ': native key coverage');
   for (const [key, value] of values) assert.deepEqual(placeholders(value), placeholders(nativeTables[0].values.get(key)), name + ': ' + key);
 }
-console.log(`Validated ${keys.length} menu strings and ${nativeTables[0].values.size} native strings in all five languages.`);
+console.log(`Validated ${keys.length} menu strings in ${locales.length} languages and ${nativeTables[0].values.size} native strings in ${nativeTables.length}.`);

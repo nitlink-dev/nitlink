@@ -121,6 +121,12 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+copy /y "%BUILD_DIR%\locales\tr-TR.js" "%STAGING_DIR%\locales\" >nul
+if errorlevel 1 (
+  echo [ERROR] tr-TR localization resource is missing from the build output.
+  pause
+  exit /b 1
+)
 
 echo Copying settings assets...
 for %%F in (menu.js Archivo-400.ttf Archivo-500.ttf Archivo-600.ttf Archivo-OFL.txt kofi-cup.png) do (

@@ -83,3 +83,5 @@ project authorship or maintainership.
 - **Korean (ko-KR):** [iorph](https://github.com/i0rph) (`@i0rph`) — translation,
   automatic system-language selection, and localization review with real-device
   validation.
+- **Turkish (tr-TR):** [karsiyakali1912](https://github.com/karsiyakali1912)
+  (`@karsiyakali1912`) — settings menu translation.

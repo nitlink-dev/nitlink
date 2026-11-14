@@ -489,6 +489,7 @@ LanguagePreference Localization::ParsePreference(const std::string& value)
     if (value == "zh-TW") return LanguagePreference::TraditionalChinese;
     if (value == "de-DE") return LanguagePreference::German;
     if (value == "ko-KR") return LanguagePreference::Korean;
+    if (value == "tr-TR") return LanguagePreference::Turkish;
     return LanguagePreference::System;
 }
 
@@ -521,6 +522,10 @@ void Localization::SetPreference(LanguagePreference preference)
         m_preferenceName = "ko-KR";
         m_localeName = L"ko-KR";
         break;
+    case LanguagePreference::Turkish:
+        m_preferenceName = "tr-TR";
+        m_localeName = L"tr-TR";
+        break;
     case LanguagePreference::System:
     default: {
         m_preferenceName = "system";
@@ -528,7 +533,8 @@ void Localization::SetPreference(LanguagePreference preference)
         m_localeName = IsSimplifiedChineseLocale(locale) ? L"zh-CN"
             : IsTraditionalChineseLocale(locale) ? L"zh-TW"
             : IsGermanLocale(locale) ? L"de-DE"
-            : IsKoreanLocale(locale) ? L"ko-KR" : L"en-US";
+            : IsKoreanLocale(locale) ? L"ko-KR"
+            : IsTurkishLocale(locale) ? L"tr-TR" : L"en-US";
         break;
     }
     }
@@ -567,6 +573,13 @@ bool Localization::IsGermanLocale(const std::wstring& locale)
 bool Localization::IsKoreanLocale(const std::wstring& locale)
 {
     return locale == L"ko" || locale.starts_with(L"ko-");
+}
+
+// Turkish language variants use the tr-TR menu resources. There is no native
+// Turkish table yet, so Get() serves toasts and HUD text from the en-US table.
+bool Localization::IsTurkishLocale(const std::wstring& locale)
+{
+    return locale == L"tr" || locale.starts_with(L"tr-");
 }
 
 std::wstring Localization::Get(const wchar_t* key) const

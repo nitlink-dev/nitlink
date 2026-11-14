@@ -15,6 +15,7 @@
         if (['zh-tw', 'zh-hant-tw'].includes(tag)) return 'zh-TW';
         if (tag === 'de' || tag.startsWith('de-')) return 'de-DE';
         if (tag === 'ko' || tag.startsWith('ko-')) return 'ko-KR';
+        if (tag === 'tr' || tag.startsWith('tr-')) return 'tr-TR';
       }
       return 'en-US';
     };
@@ -23,7 +24,7 @@
       if (hasWebViewHost()) return 'system';
       try {
         const saved = window.localStorage.getItem(standaloneLanguageKey);
-        return ['system', 'en-US', 'zh-TW', 'zh-CN', 'de-DE', 'ko-KR'].includes(saved) ? saved : 'system';
+        return ['system', 'en-US', 'zh-TW', 'zh-CN', 'de-DE', 'ko-KR', 'tr-TR'].includes(saved) ? saved : 'system';
       } catch (_) {
         return 'system';
       }
@@ -80,7 +81,7 @@
       const h1 = document.querySelector('.topbar h1');
       if (h1 && titleKey) h1.textContent = t(titleKey);
       const language = document.getElementById('language-select');
-      if (language && language.value !== 'system' && language.value !== 'en-US' && language.value !== 'zh-TW' && language.value !== 'zh-CN' && language.value !== 'de-DE' && language.value !== 'ko-KR') {
+      if (language && language.value !== 'system' && language.value !== 'en-US' && language.value !== 'zh-TW' && language.value !== 'zh-CN' && language.value !== 'de-DE' && language.value !== 'ko-KR' && language.value !== 'tr-TR') {
         language.value = 'system';
       }
     };

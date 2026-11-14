@@ -161,6 +161,7 @@ window.NitLinkLocales['zh-TW'] = {
   'language.system': '系統預設',
   'language.german': 'Deutsch',
   'language.korean': '한국어',
+  'language.turkish': 'Türkçe',
   'language.simplifiedChinese': '简体中文',
   'language.english': 'English',
   'language.traditionalChinese': '繁體中文',

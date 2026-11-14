@@ -210,7 +210,7 @@ cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-Output at `out/build/x64-Release/NitLink.exe` (VS) or `build/Release/NitLink.exe` (CLI). The build copies `nitlink-menu.html`, `locales/en-US.js`, `locales/zh-TW.js`, `locales/zh-CN.js`, `locales/de-DE.js`, `locales/ko-KR.js`, the complete `assets/menu` folder and `third_party/nis/NIS_Scaler.h` beside the `.exe`, preserving their subfolders (all are needed at runtime).
+Output at `out/build/x64-Release/NitLink.exe` (VS) or `build/Release/NitLink.exe` (CLI). The build copies `nitlink-menu.html`, `locales/en-US.js`, `locales/zh-TW.js`, `locales/zh-CN.js`, `locales/de-DE.js`, `locales/ko-KR.js`, `locales/tr-TR.js`, the complete `assets/menu` folder and `third_party/nis/NIS_Scaler.h` beside the `.exe`, preserving their subfolders (all are needed at runtime).
 
 ---
 
@@ -348,6 +348,7 @@ The Steam frame-generation engine and trained models are developed separately an
 - **Simplified Chinese (zh-CN) localization**: [CN_115](https://github.com/CN115) (`@CN115`).
 - **German (de-DE) localization**: [Noka123](https://github.com/Noka123) (`@Noka123`).
 - **Korean (ko-KR) localization**: [iorph](https://github.com/i0rph) (`@i0rph`) for translation and real-device localization review.
+- **Turkish (tr-TR) localization**: [karsiyakali1912](https://github.com/karsiyakali1912) (`@karsiyakali1912`) for the settings menu translation.
 - See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for the full contributor and research credits.
 
 ---
