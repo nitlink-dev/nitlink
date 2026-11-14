@@ -15,8 +15,8 @@
 IDI_APP_ICON ICON "../assets/nitlink.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,2,5,0
- PRODUCTVERSION 1,2,5,0
+ FILEVERSION 1,2,6,0
+ PRODUCTVERSION 1,2,6,0
  FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -28,12 +28,12 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "FileDescription", "NitLink"
-            VALUE "FileVersion", "1.2.5"
+            VALUE "FileVersion", "1.2.6"
             VALUE "InternalName", "NitLink"
             VALUE "LegalCopyright", "Copyright (c) 2026 NitLink Contributors"
             VALUE "OriginalFilename", "NitLink.exe"
             VALUE "ProductName", "NitLink"
-            VALUE "ProductVersion", "1.2.5"
+            VALUE "ProductVersion", "1.2.6"
         END
     END
     BLOCK "VarFileInfo"
