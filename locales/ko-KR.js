@@ -211,7 +211,7 @@ window.NitLinkLocales['ko-KR'] = {
   'about.description': 'HDR10과 VRR을 지원하고 장치를 간편하게 제어할 수 있는 저지연 캡처 뷰어입니다.',
   'about.feedback': '의견 보내기',
   'about.support': 'Ko-fi에서 후원하기',
-  'about.steam': '프레임 생성: Steam에서 NitLink를 찜 목록에 추가하세요',
+  'about.steam': '프레임 생성: NitLink를 Steam에서 만나보세요',
   'about.localizationContributors': '번역 기여자',
   'about.localizationTraditionalChinese': '중국어 번체 (zh-TW) — ',
   'about.localizationName': 'HolyBear',

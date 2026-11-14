@@ -211,7 +211,7 @@ window.NitLinkLocales['zh-TW'] = {
   'about.description': '支援 HDR10、VRR 與乾淨裝置控制的低延遲擷取檢視器。',
   'about.feedback': '提供意見',
   'about.support': '在 Ko-fi 支援',
-  'about.steam': '畫格生成：NitLink Steam 版，點此加入願望清單',
+  'about.steam': '畫格生成：NitLink Steam 版現已推出',
   'about.localizationContributors': '在地化貢獻者',
   'about.localizationTraditionalChinese': '繁體中文（zh-TW）— ',
   'about.localizationName': '聖小熊',

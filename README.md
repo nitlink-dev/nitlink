@@ -10,7 +10,7 @@ A capture card viewer for playing your console in a Windows desktop window. Keep
 
 Built and tested on the Elgato 4K Pro (PCIe), 4K S (USB), 4K X (USB), and Cam Link 4K (USB).
 
-**[Download NitLink](https://github.com/nitlink-dev/nitlink/releases/latest)** · **[Wishlist on Steam](https://store.steampowered.com/app/5346980)** · [Hardware support](#hardware-support) · [Report an issue](https://github.com/nitlink-dev/nitlink/issues)
+**[Download NitLink](https://github.com/nitlink-dev/nitlink/releases/latest)** · **[Get NitLink on Steam](https://store.steampowered.com/app/5346980)** · [Hardware support](#hardware-support) · [Report an issue](https://github.com/nitlink-dev/nitlink/issues)
 
 <p align="center">
   <a href="https://github.com/nitlink-dev/nitlink/releases/latest"><img src="https://img.shields.io/github/v/release/nitlink-dev/nitlink?label=release&color=70A4DB" alt="Latest release"></a>
@@ -23,12 +23,12 @@ Built and tested on the Elgato 4K Pro (PCIe), 4K S (USB), 4K X (USB), and Cam Li
 
 Download the current NitLink release from [GitHub Releases](https://github.com/nitlink-dev/nitlink/releases/latest). The source in this repository is MIT-licensed and continues to be maintained.
 
-[NitLink on Steam](https://store.steampowered.com/app/5346980) is coming soon with experimental frame generation inside the normal, resizable NitLink window. It targets **30 fps SDR games displayed at 60 fps**, using intermediate frames generated on the PC GPU. Frame generation adds delay and does not change the console game's own frame rate or input response.
+[NitLink on Steam](https://store.steampowered.com/app/5346980) is available with experimental frame generation inside the normal, resizable NitLink window. It targets **30 fps SDR games displayed at 60 fps**, using intermediate frames generated on the PC GPU. Frame generation adds delay and does not change the console game's own frame rate or input response.
 
-The frame-generation engine and trained models are developed separately and are not included in this repository. See the Steam page for GPU requirements and availability. The capture, HDR and VRR documentation below describes the source distributed here.
+The frame-generation engine and trained models are developed separately and are not included in this repository. See the Steam page for GPU requirements. The capture, HDR and VRR documentation below describes the source distributed here.
 
 <p align="center">
-  <a href="https://store.steampowered.com/app/5346980"><img src="docs/images/steam-banner.webp" alt="NitLink with frame generation: wishlist on Steam" width="900"></a>
+  <a href="https://store.steampowered.com/app/5346980"><img src="docs/images/steam-banner-available.png" alt="NitLink with frame generation: available now on Steam" width="900"></a>
 </p>
 
 [Watch the NitLink showcase](https://youtu.be/w8Rq5Bonbgg) · [View the HDR comparison](docs/images/COMPARSIONS.webp)
@@ -128,7 +128,7 @@ A direct HDMI connection avoids the capture and viewer stages. The measured comp
 - **Tearing on fixed-refresh displays.** Enable VSync with `Alt+V` or F1 to synchronize presentation. VSync defaults to off and may add input delay. Leave Low-Latency enabled; `Alt+L` does not control VSync. GPU driver overrides still apply: use the application-controlled VSync setting in the driver to follow the NitLink toggle.
 - **Brief visual artifact during PS5 HDR mode changes.** Changing the PS5's HDR setting mid-session renegotiates the HDMI link; a frame or two can show a transient green band before the next reconcile (~100ms). Restarting NitLink avoids it if you know you'll change PS5 HDR mode.
 - **Spider-Man 2 on the 4K S in 4K SDR (game-specific).** On the 4K S's NV12 4K@60 SDR path the estimated Content FPS counter reads lower than expected for this title, while other games on the same setup run at 60fps. Switching the 4K S to 1080p HDR restored 60fps in that test. The cause is unconfirmed; a source/card interaction is a hypothesis.
-- **Built-in frame generation is in development for [NitLink on Steam](https://store.steampowered.com/app/5346980).** It is not included in the source or GitHub release documented here. For recording or streaming, capture the NitLink window in OBS.
+- **Built-in frame generation is part of [NitLink on Steam](https://store.steampowered.com/app/5346980).** It is not included in the source or GitHub release documented here. For recording or streaming, capture the NitLink window in OBS.
 
 <p align="center">
   <img src="docs/images/no-signal.png" alt="NitLink branded no-signal screen" width="900">

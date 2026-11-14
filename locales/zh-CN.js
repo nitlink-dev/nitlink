@@ -211,7 +211,7 @@ window.NitLinkLocales['zh-CN'] = {
   'about.description': '低延迟采集预览软件，支持 HDR10、VRR 和设备控制。',
   'about.feedback': '提供意见',
   'about.support': '在 Ko-fi 支持',
-  'about.steam': '帧生成：NitLink Steam 版，点此加入愿望单',
+  'about.steam': '帧生成：NitLink Steam 版现已推出',
   'about.localizationContributors': '本地化贡献者',
   'about.localizationTraditionalChinese': '繁体中文（zh-TW）— ',
   'about.localizationName': '圣小熊',

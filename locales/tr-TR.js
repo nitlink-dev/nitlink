@@ -211,7 +211,7 @@ window.NitLinkLocales['tr-TR'] = {
   'about.description': 'Yakalama kartınızdan gelen görüntüyü düşük gecikmeyle izleyin. NitLink, HDR10 ve VRR’yi destekler ve kart ayarlarına kolayca ulaşmanızı sağlar.',
   'about.feedback': 'Geri bildirim gönder',
   'about.support': 'Ko-fi üzerinden destek ol',
-  'about.steam': 'Kare oluşturma özellikli NitLink’i Steam istek listenize ekleyin',
+  'about.steam': 'Kare oluşturma özellikli NitLink artık Steam’de',
   'about.localizationContributors': 'Çeviriye katkıda bulunanlar',
   'about.localizationTraditionalChinese': 'Geleneksel Çince (zh-TW) — ',
   'about.localizationName': 'HolyBear',

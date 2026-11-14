@@ -212,7 +212,7 @@ window.NitLinkLocales['en-US'] = {
   'about.description': 'Low-latency capture viewer for HDR10, VRR, and clean device control.',
   'about.feedback': 'Send feedback',
   'about.support': 'Support on Ko-fi',
-  'about.steam': 'Frame generation: NitLink on Steam, wishlist it here',
+  'about.steam': 'Frame generation: NitLink is available on Steam',
   'about.localizationContributors': 'Localization contributors',
   'about.localizationTraditionalChinese': 'Traditional Chinese (zh-TW) — ',
   'about.localizationName': 'HolyBear',

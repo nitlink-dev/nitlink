@@ -211,7 +211,7 @@ window.NitLinkLocales['de-DE'] = {
   'about.description': 'Aufnahme-Viewer mit niedriger Latenz für HDR10, VRR und saubere Gerätesteuerung.',
   'about.feedback': 'Feedback senden',
   'about.support': 'Auf Ko-fi unterstützen',
-  'about.steam': 'Frame-Generation: NitLink auf Steam, hier auf die Wunschliste setzen',
+  'about.steam': 'Frame-Generation: NitLink ist auf Steam erhältlich',
   'about.localizationContributors': 'Mitwirkende an der Lokalisierung',
   'about.localizationTraditionalChinese': 'Traditionelles Chinesisch (zh-TW) — ',
   'about.localizationName': 'HolyBear',
