@@ -462,6 +462,8 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
         return false;
     }
     m_window->SetPreventSleep(m_config->preventSleep);
+    m_window->SetHidePcCursorDuringGameplay(m_config->hidePcCursorDuringGameplay);
+    m_window->SetGameplaySettingsVisible(m_settingsVisible);
     m_window->SetCloseCallback([this] {
         if (m_webviewSettings) m_webviewSettings->DispatchPendingMessages(/*closing=*/true);
         // Release WASAPI before destroying the window or waiting on unrelated workers.
@@ -1202,6 +1204,7 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
         const bool retrying = m_webviewSettings->IsStarting();
         m_settingsOpenPending = retrying && (m_settingsOpenPending || m_settingsVisible);
         m_settingsVisible = false;
+        if (m_window) m_window->SetGameplaySettingsVisible(false);
         AppLog(L"Settings: " + Tr(reason.c_str()));
         if (!retrying || m_toastText.empty() || std::chrono::steady_clock::now() >= m_toastExpiry)
             ShowToast(Tr(retrying ? L"toast.settingsRetry" : reason.c_str()),
@@ -1365,6 +1368,15 @@ bool Application::Initialize(HINSTANCE hInstance, int nCmdShow)
             m_config->Save("nitlink.json");
             AppLog(m_lowLatency ? L"Low-Latency ON (F1): present-on-arrival"
                                 : L"Low-Latency OFF (F1): VRR/Smooth pacing");
+            return;
+        }
+        if (action == L"toggleHidePcCursor" && m_config && m_window) {
+            m_config->hidePcCursorDuringGameplay = !m_config->hidePcCursorDuringGameplay;
+            m_window->SetHidePcCursorDuringGameplay(m_config->hidePcCursorDuringGameplay);
+            m_config->Save("nitlink.json");
+            AppLog(m_config->hidePcCursorDuringGameplay ? L"Hide PC cursor during gameplay ON" :
+                L"Hide PC cursor during gameplay OFF");
+            PushSettingsState();
             return;
         }
         if (action == L"togglePreventSleep" && m_config && m_window) {
@@ -3443,6 +3455,7 @@ void Application::ToggleSettings()
 {
     if (!m_webviewSettings || !m_webviewSettings->IsReady()) {
         m_settingsVisible = false;
+        if (m_window) m_window->SetGameplaySettingsVisible(false);
         if (m_webviewSettings && m_webviewSettings->IsStarting()) {
             m_firstLaunch = false;
             m_settingsOpenPending = !m_settingsOpenPending;
@@ -3456,8 +3469,11 @@ void Application::ToggleSettings()
         return;
     }
     m_settingsVisible = !m_settingsVisible;
+    // The pointer comes back before the panel shows and hides only after it is gone.
+    if (m_settingsVisible && m_window) m_window->SetGameplaySettingsVisible(true);
     if (m_webviewSettings) {
         m_webviewSettings->Show(m_settingsVisible);
+        if (!m_settingsVisible && m_window) m_window->SetGameplaySettingsVisible(false);
         // Push current state every time the menu opens so toggles reflect
         // the truth: important for things that can change outside the menu
         // (Alt+H for HDR, Ctrl+G for game cycle).
@@ -5016,6 +5032,7 @@ void Application::PushSettingsState(bool refreshCaptureDevices)
                                                       : L"refresh") << L"\",";
     js << L"\"vsync\":"             << (m_config->vsync ? L"true" : L"false") << L",";
     js << L"\"lowLatency\":"        << (m_config->lowLatency        ? L"true" : L"false") << L",";
+    js << L"\"hidePcCursorDuringGameplay\":" << (m_config->hidePcCursorDuringGameplay ? L"true" : L"false") << L",";
     js << L"\"preventSleep\":"      << (m_config->preventSleep      ? L"true" : L"false") << L",";
     js << L"\"audioMuted\":"        << (m_config->audioMuted        ? L"true" : L"false") << L",";
     js << L"\"audioFifoMs\":" << m_config->audioFifoMs << L",";

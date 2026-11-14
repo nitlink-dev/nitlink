@@ -143,12 +143,15 @@ void CheckConfig(const std::filesystem::path& path)
 {
     NitLink::Config config;
     Require(config.preventSleep, "new configurations default to preventing sleep");
+    Require(!config.hidePcCursorDuringGameplay, "new configurations keep the PC cursor visible");
     {
         std::ofstream legacy(path);
         legacy << "window_width = 1280\n";
     }
     Require(config.Load(path.string()) && config.preventSleep,
             "existing configurations without the key keep the default");
+    Require(!config.hidePcCursorDuringGameplay,
+            "existing configurations without the cursor key keep the cursor visible");
     for (const bool enabled : {false, true}) {
         config.preventSleep = enabled;
         Require(config.Save(path.string()), "sleep preference saves");
@@ -156,6 +159,14 @@ void CheckConfig(const std::filesystem::path& path)
         reloaded.preventSleep = !enabled;
         Require(reloaded.Load(path.string()) && reloaded.preventSleep == enabled,
                 "sleep preference survives restart");
+    }
+    for (const bool enabled : {true, false}) {
+        config.hidePcCursorDuringGameplay = enabled;
+        Require(config.Save(path.string()), "cursor preference saves");
+        NitLink::Config reloaded;
+        reloaded.hidePcCursorDuringGameplay = !enabled;
+        Require(reloaded.Load(path.string()) && reloaded.hidePcCursorDuringGameplay == enabled,
+                "cursor preference survives restart");
     }
 }
 

@@ -41,6 +41,11 @@ public:
     bool SetPiPOpacity(float opacity);
     void SetPreventSleep(bool enabled);
     void SetVideoAvailable(bool available);
+    // Hides the PC pointer over live video in the active window. The pointer
+    // stays visible over the settings panel, in Picture-in-Picture and
+    // whenever another window is in front.
+    void SetHidePcCursorDuringGameplay(bool enabled);
+    void SetGameplaySettingsVisible(bool visible);
     bool IsPreventingSleep() const { return m_playbackPower.IsActive(); }
 
     // Sets where SetPiP will position the PiP window the next time it
@@ -97,6 +102,7 @@ public:
 
 private:
     void UpdatePlaybackPower();
+    bool RefreshGameplayCursor(bool reapply = false);
     bool GetPiPWorkArea(RECT& work) const;
     bool ApplyPiPRect(const RECT& rect);
     int HitTestPiPResize(POINT screenPoint) const;
@@ -108,6 +114,10 @@ private:
     PlaybackPowerRequest m_playbackPower;
     bool m_preventSleep = true;
     bool m_videoAvailable = false;
+    bool m_hidePcCursorDuringGameplay = false;
+    bool m_gameplaySettingsVisible = false;
+    bool m_gameplayCursorHidden = false;
+    bool m_gameplayCursorActive = false;
     HINSTANCE  m_hInstance = nullptr;
     bool       m_isFullscreen = false;
     bool       m_wasResized = false;

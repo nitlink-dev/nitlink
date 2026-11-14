@@ -93,6 +93,8 @@ window.NitLinkLocales['zh-TW'] = {
   'row.lowLatency': '低延遲模式',
   'row.vsync': '垂直同步',
   'tooltip.vsync': '同步畫面呈現，避免固定更新率螢幕出現畫面撕裂，但可能增加輸入延遲。低延遲模式可保持開啟。顯示卡驅動程式的強制設定仍然有效。按 Alt+V 切換。',
+  'row.hidePcCursor': '遊戲時隱藏電腦滑鼠指標',
+  'tooltip.hidePcCursor': '在視窗或全螢幕中播放遊戲畫面時隱藏電腦滑鼠指標。F1 設定、其他應用程式和子母畫面中仍顯示指標。不會隱藏遊戲畫面中擷取到的指標。',
   'row.preventSleep': '防止睡眠',
   'tooltip.preventSleep': '顯示影像時防止螢幕關閉及電腦進入睡眠，遊戲暫停時也適用。NitLink 最小化、隱藏、顯示「無訊號」或關閉時會停止。關閉此選項即可使用 Windows 原有的閒置睡眠設定。',
   'chip.recommended': '建議',

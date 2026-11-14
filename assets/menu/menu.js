@@ -898,6 +898,7 @@
       setToggle('toggle-nis', s.nisEnabled);
       setToggle('toggle-vsync', s.vsync);
       setToggle('toggle-low-latency', s.lowLatency);
+      setToggle('toggle-hide-pc-cursor', s.hidePcCursorDuringGameplay);
       setToggle('toggle-prevent-sleep', s.preventSleep);
       if (s.presentPacing) {
         setText('pacing-val',

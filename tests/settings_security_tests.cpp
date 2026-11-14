@@ -95,7 +95,7 @@ int main() {
         Expect(!ParseSettingsMessage(prefix + L",\"value\":true}"), "unexpected value");
     }
     for (auto action : {L"toggleHDR", L"toggleColorExpansion", L"toggleNIS", L"toggleMute",
-         L"toggleVSync", L"toggleLowLatency", L"togglePreventSleep"}) {
+         L"toggleVSync", L"toggleLowLatency", L"togglePreventSleep", L"toggleHidePcCursor"}) {
         const auto prefix = L"{\"action\":\"" + std::wstring(action) + L"\"";
         Expect(ParseSettingsMessage(prefix + L"}").has_value(), "native toggle");
         Expect(ParseSettingsMessage(prefix + L",\"value\":false}").has_value(), "menu toggle");

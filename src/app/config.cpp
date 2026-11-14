@@ -410,6 +410,7 @@ bool Config::Load(const std::string& path)
         }
         if (key == "vsync")           vsync = ParseBool(val);
         if (key == "low_latency")     lowLatency = ParseBool(val);
+        if (key == "hide_pc_cursor_during_gameplay") hidePcCursorDuringGameplay = ParseBool(val);
         if (key == "prevent_sleep")  preventSleep = ParseBool(val);
         if (key == "present_cap_hz") presentCapHz = ParseI32(val, presentCapHz, -1, 1000);
         if (key == "aspect_ratio") {
@@ -687,6 +688,9 @@ bool Config::Save(const std::string& path)
     file << "# VSync (Alt+V, default false): synchronize presentation to avoid\n";
     file << "# tearing. May add input delay; Low-Latency can stay enabled.\n";
     file << "vsync = " << (vsync ? "true" : "false") << "\n\n";
+
+    file << "# Hide the PC pointer over active gameplay while settings are closed.\n";
+    file << "hide_pc_cursor_during_gameplay = " << (hidePcCursorDuringGameplay ? "true" : "false") << "\n\n";
 
     file << "# Keep the display and PC awake while video is visible.\n";
     file << "# Disabled while minimized, hidden or showing No signal.\n";

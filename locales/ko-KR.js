@@ -93,6 +93,8 @@ window.NitLinkLocales['ko-KR'] = {
   'row.lowLatency': '저지연 모드',
   'row.vsync': '수직 동기화',
   'tooltip.vsync': '화면 출력을 동기화하여 고정 주사율 디스플레이의 화면 찢어짐을 방지합니다. 입력 지연이 늘어날 수 있습니다. 저지연 모드는 켜 두어도 됩니다. 그래픽 드라이버에서 강제로 지정한 설정은 그대로 적용됩니다. Alt+V로 전환합니다.',
+  'row.hidePcCursor': '게임 중 PC 마우스 포인터 숨기기',
+  'tooltip.hidePcCursor': '창 모드 또는 전체 화면에서 게임 영상 위의 PC 포인터를 숨깁니다. F1 설정, 다른 앱 및 화면 속 화면에서는 포인터가 표시됩니다. 게임 영상에 캡처된 포인터는 숨기지 않습니다.',
   'row.preventSleep': '절전 모드 방지',
   'tooltip.preventSleep': '게임이 일시 정지된 경우를 포함하여, 영상이 표시되는 동안 디스플레이와 PC가 절전 모드로 전환되지 않게 합니다. NitLink가 최소화되거나, 숨겨지거나, 신호 없음 상태이거나, 종료되면 해제됩니다. 일반 Windows 절전 설정을 사용하려면 끄세요.',
   'chip.recommended': '권장',

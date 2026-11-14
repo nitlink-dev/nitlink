@@ -93,6 +93,8 @@ window.NitLinkLocales['de-DE'] = {
   'row.lowLatency': 'Niedriglatenzmodus',
   'row.vsync': 'VSync',
   'tooltip.vsync': 'Synchronisiert die Ausgabe, um Tearing auf Displays mit fester Bildwiederholrate zu verhindern. Kann die Eingabeverzögerung erhöhen. Der Niedriglatenzmodus kann eingeschaltet bleiben. Vorgaben des Grafiktreibers gelten weiterhin. Umschalten mit Alt+V.',
+  'row.hidePcCursor': 'PC-Mauszeiger im Spiel ausblenden',
+  'tooltip.hidePcCursor': 'Blendet den PC-Mauszeiger über dem laufenden Spiel im Fenster oder Vollbild aus. In den F1-Einstellungen, anderen Apps und Bild-in-Bild bleibt er sichtbar. Ein im Spielbild erfasster Zeiger wird nicht ausgeblendet.',
   'row.preventSleep': 'Ruhemodus verhindern',
   'tooltip.preventSleep': 'Hält Bildschirm und PC wach, solange Video sichtbar ist, auch bei pausierten Spielen. Endet, wenn NitLink minimiert, ausgeblendet oder geschlossen ist oder „Kein Signal“ anzeigt. Ausschalten, um die normalen Windows-Energiespareinstellungen zu verwenden.',
   'chip.recommended': 'Empfohlen',

@@ -94,6 +94,8 @@ window.NitLinkLocales['en-US'] = {
   'row.lowLatency': 'Low-Latency Mode',
   'row.vsync': 'VSync',
   'tooltip.vsync': 'Synchronizes presentation to prevent tearing on fixed-refresh displays. May add input delay. Low-Latency Mode can stay on. GPU driver overrides still apply. Toggle with Alt+V.',
+  'row.hidePcCursor': 'Hide PC cursor during gameplay',
+  'tooltip.hidePcCursor': 'Hides the PC pointer over active gameplay in this window or fullscreen. F1 settings, other apps and Picture-in-Picture keep the pointer visible. Does not hide a cursor captured from the game.',
   'row.preventSleep': 'Prevent sleep',
   'tooltip.preventSleep': 'Keeps the display and PC awake while video is visible, including paused games. Stops when NitLink is minimized, hidden, showing No signal or closed. Turn off to use normal Windows idle sleep settings.',
   'chip.recommended': 'Recommended',

@@ -93,6 +93,8 @@ window.NitLinkLocales['tr-TR'] = {
   'row.lowLatency': 'Düşük gecikme modu',
   'row.vsync': 'VSync',
   'tooltip.vsync': 'Kareleri ekranın yenileme anına denk getirerek sabit yenileme hızında görüntü yırtılmasını önler. Giriş gecikmesi artabilir. Düşük gecikme modunu açık tutabilirsiniz. Ekran kartı sürücüsü VSync ayarını zorluyorsa sürücünün ayarı geçerlidir. Alt+V ile açıp kapatabilirsiniz.',
+  'row.hidePcCursor': 'Oyun sırasında PC imlecini gizle',
+  'tooltip.hidePcCursor': 'Bu pencerede veya tam ekranda oyun görüntüsünün üzerindeki PC imlecini gizler. F1 ayarlarında, diğer uygulamalarda ve resim içinde resim modunda imleç görünür kalır. Oyun görüntüsüyle birlikte yakalanan imleci gizlemez.',
   'row.preventSleep': 'Uykuya geçmeyi önle',
   'tooltip.preventSleep': 'NitLink görüntü gösterirken ekranın kapanmasını ve bilgisayarın uykuya geçmesini önler. Oyun duraklatılsa da çalışır. NitLink küçültüldüğünde, gizlendiğinde, kapandığında veya sinyal olmadığında Windows uyku ayarları yeniden geçerli olur.',
   'chip.recommended': 'Önerilen',
