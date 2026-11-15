@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17191d">
+  <title>NitLink · Questions and answers</title>
+  <meta name="description" content="Answers about NitLink: setup, capture cards, HDR, frame generation on Steam, troubleshooting and where to report a problem.">
+  <link rel="canonical" href="https://nitlink.app/faq.html">
+  <meta property="og:title" content="NitLink · Questions and answers">
+  <meta property="og:description" content="Setup, capture cards, HDR, frame generation, troubleshooting and support for NitLink.">
+  <meta property="og:image" content="https://nitlink.app/images/nitlink-social-1280x720.png">
+  <meta property="og:url" content="https://nitlink.app/faq.html">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="images/favicon.png">
+  <link rel="preload" href="fonts/Archivo-400.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="fonts/Archivo-600.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="global-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./" aria-label="NitLink home"><img src="images/nitlink-lockup.svg" width="841" height="193" alt="NitLink"></a>
+      <nav class="header-links" aria-label="Main navigation">
+        <a href="./#frame-generation">Frame Generation</a>
+        <a href="./#downloads">Get NitLink</a>
+        <a href="faq.html" aria-current="page">FAQ</a>
+        <a href="release-notes.html">Release notes</a>
+        <a class="header-steam" href="https://store.steampowered.com/app/5346980/">Get it on Steam <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="doc-page">
+    <div class="wrap">
+      <p class="feature-label">Questions and answers</p>
+      <h1>NitLink FAQ</h1>
+      <p class="section-description">Setup, capture cards, HDR, frame generation and what to do when something goes wrong. Every answer has its own link: open a question and copy the address.</p>
+      <nav class="doc-toc" aria-label="On this page">
+        <a href="#start">Getting started</a>
+        <a href="#cards">Capture cards</a>
+        <a href="#hdr">HDR</a>
+        <a href="#framegen">Frame generation</a>
+        <a href="#trouble">Troubleshooting</a>
+        <a href="#support">Reporting a problem</a>
+      </nav>
+
+      <h2 id="start">Getting started</h2>
+      <div class="faq">
+        <details id="what-is-needed"><summary>What do I need?</summary><p>A console, a capture card in or connected to your Windows PC, and an HDMI cable from the console to the card. NitLink shows the card’s video in a window or fullscreen and plays its audio. It needs Windows 10 (1809 or later) or Windows 11, a DirectX 11-capable GPU and Microsoft Edge WebView2.</p></details>
+        <details id="two-versions"><summary>What is the difference between the GitHub version and the Steam version?</summary><p>The version on <a href="https://github.com/nitlink-dev/nitlink/releases/latest">GitHub</a> is the free, open-source capture viewer: HDR10, variable refresh, picture-in-picture, image and audio controls. The version on <a href="https://store.steampowered.com/app/5346980/">Steam</a> is the same viewer with experimental frame generation, gameplay recording and replay clips, and custom protection masks.</p></details>
+        <details id="install-free"><summary>How do I install the GitHub version?</summary><p>Download the release ZIP, extract it into a new writable folder and run NitLink.exe. Keep the bundled files and folders together. Settings are stored beside the executable.</p></details>
+        <details id="open-settings"><summary>Where are the settings?</summary><p>Press <kbd>F1</kbd>. The panel opens at the side of the picture. Pick your capture card at the top. <kbd>Alt + H</kbd> switches HDR output and <kbd>Alt + V</kbd> switches VSync.</p></details>
+        <details id="latency"><summary>Is it as fast as direct HDMI?</summary><p>No. A capture card adds latency compared with a direct connection, and NitLink keeps its own part of that delay small. For competitive play, connect the console directly or use the card’s HDMI passthrough. The measured numbers are on the <a href="./#latency">home page</a>.</p></details>
+        <details id="recording"><summary>Can NitLink record by itself?</summary><p>Yes, in the Steam version: F1 &gt; Recording. Record the NitLink picture with console audio, or turn on the replay buffer and save the last 15 or 30 seconds as a clip (<kbd>Ctrl + Alt + C</kbd>; <kbd>Ctrl + Alt + R</kbd> starts and stops a recording). Resolution can be 1080p or 4K, in SDR at up to 60 FPS. Files are saved in Videos / NitLink / Clips. Recording uses extra GPU and CPU; if frame generation pauses while you record, switch Resolution to 1080p.</p></details>
+        <details id="obs"><summary>Can I record or stream with OBS?</summary><p>Yes. Open the card in NitLink, then add NitLink as a Game Capture source in OBS. A capture card can be opened by only one program at a time, so OBS cannot open the card itself while NitLink uses it.</p></details>
+      </div>
+
+      <h2 id="cards">Capture cards</h2>
+      <div class="faq">
+        <details id="supported-cards"><summary>Which capture cards work?</summary><p>These are tested and have their own support in NitLink:</p><ul><li>Elgato 4K Pro: 4K60 HDR10</li><li>Elgato 4K X: up to 4K120 capture</li><li>Elgato 4K S: 4K60 SDR, or HDR at 1080p</li><li>Elgato Cam Link 4K and Game Capture 4K60 Pro MK.2</li></ul></details>
+        <details id="other-cards"><summary>My card is not on the list. Will it work?</summary><p>Probably, in SDR. Other cards that Windows sees as Media Foundation capture devices use NitLink’s generic path, limited by the formats and driver of the card. If you try one, please <a href="https://github.com/nitlink-dev/nitlink/issues">report the result on GitHub</a> so it can be added here.</p></details>
+        <details id="card-in-use"><summary>NitLink shows no picture, but the card works in another program.</summary><p>Close the other program. A capture card feeds one program at a time, including the vendor’s own capture software. Then pick the card again at the top of the settings (<kbd>F1</kbd>).</p></details>
+        <details id="surround"><summary>Does surround sound work?</summary><p>The supported Elgato cards deliver stereo PCM. Set the console’s audio output to Linear PCM, 2.0 channels, so dialogue and other channels are not lost in the card’s downmix.</p></details>
+        <details id="120hz"><summary>Can I capture at 120 Hz?</summary><p>That depends on the card. The 4K X captures up to 4K120; the 4K Pro captures 120 Hz at a lower resolution. The negotiated mode also depends on the console’s output setting, the cable and, for USB cards, the USB port.</p></details>
+      </div>
+
+      <h2 id="hdr">HDR</h2>
+      <div class="faq">
+        <details id="hdr-setup"><summary>How do I get HDR?</summary><p>Turn HDR on at the console, use a card that captures HDR10, and use a display with HDR enabled in Windows. Then press <kbd>Alt + H</kbd> in NitLink to switch HDR output on. NitLink passes HDR10 from the console to the display.</p></details>
+        <details id="hdr-4ks"><summary>Why is HDR limited to 1080p on my Elgato 4K S?</summary><p>USB bandwidth. The 4K S can send 4K60 in SDR or 1080p in HDR, and <kbd>Alt + H</kbd> switches between the two.</p></details>
+        <details id="hdr-framegen"><summary>Does frame generation work in HDR?</summary><p>Yes, on Steam, with both engines at 1080p, 1440p and 4K. HDR output has to be switched on (<kbd>Alt + H</kbd>).</p></details>
+        <details id="hdr-recording"><summary>Can I record in HDR?</summary><p>Not with NitLink’s own recorder. Recording and replay clips need SDR output and save SDR video in 1080p or 4K at up to 60 FPS.</p></details>
+      </div>
+
+      <h2 id="framegen">Frame generation (Steam version)</h2>
+      <div class="faq">
+        <details id="fg-what"><summary>What does frame generation do?</summary><p>A model on your GPU creates a new frame between every two real frames from the console, so a 30 FPS game is shown at 60 FPS. The console still renders at its own rate, and showing the extra frames adds delay. It is labelled Experimental: results depend on the game and on your GPU, and artifacts can appear around text, HUD elements and fast movement.</p></details>
+        <details id="fg-rates"><summary>Which frame rates are supported?</summary><ul><li>30 to 60 FPS, at 1080p, 1440p and 4K.</li><li>60 to 120 FPS, at 1080p, 1440p and 4K.</li><li>40 to 120 FPS, at 1080p and 1440p. It needs the card to capture at 120 Hz and is not available at 4K.</li></ul><p>Set Frame rate in F1 &gt; Frame generation to the frame rate the game really runs at.</p></details>
+        <details id="fg-engines"><summary>NVIDIA RTX or Compatibility: which engine should I pick?</summary><p>Both run the same model, so the picture should be the same. NitLink FG (NVIDIA RTX) uses TensorRT, works on RTX cards only and uses less of the GPU. NitLink FG (Compatibility) uses Vulkan, is the default, and is the choice for every other GPU. It has not been tested on AMD and Intel GPUs yet; reports are welcome.</p></details>
+        <details id="fg-head-protection"><summary>What is Head protection?</summary><p>An option for 30 FPS games, off by default. In some games the head or body of your character can double during fast camera movement. Head protection uses a retrained model that keeps them solid, on Balanced and Quality motion detail. It can cause patches in dense vegetation, so turn it off again if you see them.</p></details>
+        <details id="fg-response"><summary>What is Response?</summary><p>How long NitLink holds each frame so the generated one is ready in time. Smooth (50 ms) is the starting point and gives the steadiest motion; Balanced (41.7 ms) and Fast (33.3 ms) respond quicker and ask more of your GPU. The exact slider is under Advanced timing. If motion stutters or frame generation pauses, go back to Smooth.</p></details>
+        <details id="fg-vsync"><summary>Do I need VSync?</summary><p>At 30 to 60 FPS on a variable-refresh display, no: on Smooth and Balanced NitLink spaces the frames itself. Turn VSync on (<kbd>Alt + V</kbd>) on the Fast setting, at 40 or 60 to 120 FPS, and on fixed-refresh displays, where the picture can otherwise look uneven or tear. At 120 FPS output the delay starts at 50 ms; with VSync on, lower values can make frame generation pause.</p></details>
+        <details id="fg-motion-detail"><summary>What does Motion detail change?</summary><p>How finely motion is measured. Quality looks best and uses the most GPU; Balanced and Performance use less and can show more artifacts around small details and HUD elements. Output resolution stays the same.</p></details>
+        <details id="fg-paused"><summary>Why did frame generation pause?</summary><p>It pauses on purpose while the settings (<kbd>F1</kbd>) are open and while NitLink is not the active window. It also pauses when the GPU cannot deliver generated frames in time, so the picture stays responsive. In that case set Response to Smooth, lower Motion detail, close other GPU-heavy programs, then switch it on again.</p></details>
+        <details id="fg-artifacts"><summary>I see artifacts. What can I do?</summary><ul><li>Doubled heads or characters at 30 FPS: try Head protection.</li><li>Patches in trees or bushes with Head protection on: turn it off.</li><li>A minimap or HUD element that smears: cover it with a custom mask in F1 &gt; Masks. Masked areas show real frames only.</li><li>Many artifacts everywhere: raise Motion detail, or check that Frame rate matches the game.</li></ul></details>
+        <details id="fg-mods"><summary>Can I use ReShade or other injected mods with NitLink?</summary><p>They are not supported. Mods and overlays that hook into NitLink use GPU time that frame generation needs and can make it pause. Please remove them before reporting a problem.</p></details>
+        <details id="fg-requirements"><summary>What GPU do I need?</summary><p>The requirements are on the <a href="https://store.steampowered.com/app/5346980/">Steam page</a>. Higher resolutions, higher frame rates and higher Motion detail need more GPU. Development and testing were done on an RTX 5080; no minimum performance is promised for other cards.</p></details>
+      </div>
+
+      <h2 id="trouble">Troubleshooting</h2>
+      <div class="faq">
+        <details id="windows-blocks"><summary>Windows blocks NitLink or warns about it.</summary><p>The executable is not code-signed yet. On the GitHub version, SmartScreen shows a warning: if you downloaded it from the <a href="https://github.com/nitlink-dev/nitlink/releases/latest">official releases</a> and choose to run it, select “More info”, then “Run anyway”. If Windows Smart App Control is on, it can block the program before it starts and does not offer a per-app exception; see Microsoft’s documentation for Smart App Control before changing that setting.</p></details>
+        <details id="no-signal"><summary>The picture is black or shows “No signal”.</summary><p>Check that the console is awake and that no other program has the card open. Then pick the card at the top of the settings (<kbd>F1</kbd>).</p></details>
+        <details id="uneven-motion"><summary>Motion looks uneven.</summary><p>Without frame generation, check that the display’s refresh rate suits the game. With frame generation, see <a href="#fg-vsync">Do I need VSync?</a> and try the Smooth Response setting.</p></details>
+        <details id="tearing"><summary>I see tearing with VSync off.</summary><p>With VSync off, a clean picture needs variable refresh (G-SYNC or FreeSync) to be active for NitLink. Check that it is switched on for your display in the GPU driver settings, including for windowed mode if you do not use fullscreen. If the tearing only appears when NitLink is started from Steam, try switching off the Steam overlay for NitLink (Steam library &gt; NitLink &gt; Properties &gt; General). Otherwise turn VSync on with <kbd>Alt + V</kbd>.</p></details>
+        <details id="cpu"><summary>How much CPU and GPU does NitLink use?</summary><p>Pixel processing runs on the GPU; the CPU handles capture, frame handoff and audio. Usage depends on the card, the resolution and the options in use, so one setup’s numbers are not a requirement for another.</p></details>
+        <details id="settings-lost"><summary>My settings were reset after an update.</summary><p>On Steam, settings are kept across updates. On GitHub, each release is a new folder: copy nitlink.json from the old folder into the new one.</p></details>
+      </div>
+
+      <h2 id="support">Reporting a problem</h2>
+      <div class="faq">
+        <details id="report-steam" open><summary>Steam version</summary><p>For a bug, use F1 &gt; About &gt; Save &amp; Send inside NitLink. It sends the diagnostics together with your description, which is what makes a problem fixable, and shows a Report ID you can quote. For questions and discussion, use the <a href="https://steamcommunity.com/app/5346980/discussions/">Steam Discussions</a>; answers there stay visible for the next person with the same setup.</p></details>
+        <details id="report-github"><summary>GitHub version</summary><p>Open an <a href="https://github.com/nitlink-dev/nitlink/issues">issue on GitHub</a> with your capture card, console, resolution and what you saw. Community builds and forks are supported by their own maintainers.</p></details>
+        <details id="one-developer"><summary>Is there a Discord?</summary><p>No. NitLink is made by one developer, and questions get better answers in one searchable place than in a chat.</p></details>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <div class="wrap footer-inner">
+      <span>NitLink · Klosed Lab · Official project</span>
+      <nav class="footer-links" aria-label="Project links"><a href="https://store.steampowered.com/app/5346980/">Steam</a><a href="https://github.com/nitlink-dev/nitlink">GitHub</a><a href="faq.html">FAQ</a><a href="release-notes.html">Release notes</a><a href="https://youtu.be/w8Rq5Bonbgg">YouTube</a><a href="https://ko-fi.com/klosed89">Ko-fi</a></nav>
+    </div>
+    <p class="wrap steam-credit">Steam and the Steam logo are trademarks and/or registered trademarks of Valve Corporation in the U.S. and/or other countries.</p>
+  </footer>
+  <script>
+    // A link to one answer (faq.html#fg-vsync) opens that answer.
+    const openTarget = () => { const el = location.hash && document.getElementById(location.hash.slice(1)); if (el && el.tagName === 'DETAILS') el.open = true; };
+    addEventListener('hashchange', openTarget); openTarget();
+    // Opening an answer puts its link in the address bar, ready to copy.
+    document.querySelectorAll('.faq details[id]').forEach(d => d.addEventListener('toggle', () => { if (d.open) history.replaceState(null, '', '#' + d.id); }));
+  </script>
+</body>
+</html>

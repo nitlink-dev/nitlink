@@ -23,7 +23,7 @@ Built and tested on the Elgato 4K Pro (PCIe), 4K S (USB), 4K X (USB), and Cam Li
 
 Download the current NitLink release from [GitHub Releases](https://github.com/nitlink-dev/nitlink/releases/latest). The source in this repository is MIT-licensed and continues to be maintained.
 
-[NitLink on Steam](https://store.steampowered.com/app/5346980) is available with experimental frame generation inside the normal, resizable NitLink window. It targets **30 fps SDR games displayed at 60 fps**, using intermediate frames generated on the PC GPU. Frame generation adds delay and does not change the console game's own frame rate or input response.
+[NitLink on Steam](https://store.steampowered.com/app/5346980) is available with experimental frame generation inside the normal, resizable NitLink window. It shows **30 fps games at 60 fps**, in SDR and HDR, and 40 or 60 fps games at 120 fps on a 120 Hz display, using intermediate frames generated on the PC GPU. Frame generation adds delay and does not change the console game's own frame rate or input response.
 
 The frame-generation engine and trained models are developed separately and are not included in this repository. See the Steam page for GPU requirements. The capture, HDR and VRR documentation below describes the source distributed here.
 

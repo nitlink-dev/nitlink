@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17191d">
+  <title>NitLink · Release notes</title>
+  <meta name="description" content="What changed in each NitLink release, on Steam and on GitHub.">
+  <link rel="canonical" href="https://nitlink.app/release-notes.html">
+  <meta property="og:title" content="NitLink · Release notes">
+  <meta property="og:description" content="What changed in each NitLink release, on Steam and on GitHub.">
+  <meta property="og:image" content="https://nitlink.app/images/nitlink-social-1280x720.png">
+  <meta property="og:url" content="https://nitlink.app/release-notes.html">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="images/favicon.png">
+  <link rel="preload" href="fonts/Archivo-400.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="fonts/Archivo-600.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="global-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./" aria-label="NitLink home"><img src="images/nitlink-lockup.svg" width="841" height="193" alt="NitLink"></a>
+      <nav class="header-links" aria-label="Main navigation">
+        <a href="./#frame-generation">Frame Generation</a>
+        <a href="./#downloads">Get NitLink</a>
+        <a href="faq.html">FAQ</a>
+        <a href="release-notes.html" aria-current="page">Release notes</a>
+        <a class="header-steam" href="https://store.steampowered.com/app/5346980/">Get it on Steam <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="doc-page">
+    <div class="wrap">
+      <p class="feature-label">Release notes</p>
+      <h1>What changed in NitLink</h1>
+      <p class="section-description">The newest release is at the top. The Steam version and the GitHub version share a version number and are listed separately, because the Steam version has more in it.</p>
+      <nav class="doc-toc" aria-label="On this page">
+        <a href="#steam-1-2-6">Steam 1.2.6</a>
+        <a href="#github-1-2-6">GitHub 1.2.6</a>
+      </nav>
+
+      <section class="release-block" id="steam-1-2-6">
+        <h2>NitLink on Steam 1.2.6</h2>
+        <p class="release-meta">November 2026 · <a href="https://store.steampowered.com/app/5346980/">Steam page</a></p>
+        <p class="section-description">Frame generation is still labelled Experimental. The main changes: steadier 30 to 60 FPS without VSync on variable-refresh displays, frame generation in HDR, a Head protection option, recording and replay clips, and custom protection masks.</p>
+        <h3>Smoother without VSync</h3>
+        <ul>
+          <li>30 to 60 FPS with VSync off: each frame is now shown at an exact time instead of whenever its drawing happened to finish. On a variable-refresh display this removes the uneven motion that used to need VSync. Applies on the Smooth and Balanced Response settings, both NitLink FG options. It adds up to 3 ms of delay. Fast is unchanged for now.</li>
+        </ul>
+        <h3>Fixes</h3>
+        <ul>
+          <li>Moving or resizing the window while frame generation was starting could leave it switched off with &quot;Prediction stopped&quot;. It now starts normally.</li>
+          <li>HDR with NitLink FG (Compatibility): a Response or delivery change used to end in &quot;Delivery setting could not be saved.&quot; and was forgotten at the next start. It is now saved.</li>
+          <li>40 to 120 FPS on a capture format below 120 Hz now says so under Frame rate instead of waiting on &quot;Starting frame generation&quot;.</li>
+        </ul>
+        <h3>Discord</h3>
+        <ul>
+          <li>F1 &gt; About has a switch to turn Discord Rich Presence off.</li>
+        </ul>
+        <h3>Menu and first start</h3>
+        <ul>
+          <li>Response replaces the frame delivery slider on the frame generation page: Smooth (recommended), Balanced and Fast. The exact slider and the Auto / Manual choice remain under Advanced timing.</li>
+          <li>New installations start 30 to 60 FPS on Smooth (50 ms), which gives each generated frame more time. Choose Balanced or Fast for quicker response. At 40 and 60 FPS sources the exact slider is shown instead.</li>
+          <li>New installations start 40 and 60 to 120 FPS at 50 ms as well. In testing, 33.3 ms with VSync on paused frame generation.</li>
+          <li>A welcome message on first start with the three steps to begin. It is in English in every language for now.</li>
+          <li>Docked settings panel: controls share one edge, the tabs take two rows, Masks has an icon, and the mode list is now called Engine.</li>
+          <li>The beta feedback form link is gone from the menu. For help, use F1 &gt; About &gt; Save &amp; Send, or the Steam discussions.</li>
+          <li>With Head protection on, a line under Motion detail says that it does not apply on Performance.</li>
+        </ul>
+        <h3>Smoother fast camera movement</h3>
+        <ul>
+          <li>Fast camera movement no longer drops to the source frame rate in short bursts. NitLink used to mistake very fast pans for scene cuts and showed them without generated frames. The limit now follows how fast the picture is already moving. Applies to both NitLink FG options, every resolution and every source frame rate.</li>
+          <li>After a short slow moment, frame generation now retries at once instead of waiting up to a second, so brief drops to the source frame rate are shorter.</li>
+        </ul>
+        <h3>Cleaner picture</h3>
+        <ul>
+          <li>Scenery that lines up with the camera movement (window bars, railings, fences, rows of windows) is no longer mistaken for on-screen HUD. It used to be held still for a frame, which chopped or doubled the detail crossing it and made pans look less smooth. Applies at 1080p, 1440p and 4K output.</li>
+          <li>New Head protection option (F1 &gt; Frame generation) for 30 FPS sources on Balanced and Quality motion detail, with both NitLink FG options: a retrained motion model that keeps heads and characters from doubling during fast camera pans, with a softer edge around characters in SDR. It is off by default because it can cause patches in dense vegetation. With it off, both options use the original model.</li>
+        </ul>
+        <h3>HDR</h3>
+        <ul>
+          <li>4K HDR frame generation does less work per generated frame, with an identical picture.</li>
+        </ul>
+        <h3>Language</h3>
+        <ul>
+          <li>Added Russian. Choose it in the Language list in settings (F1); a Russian Windows selects it automatically. Menu translation by Mitsurain.</li>
+        </ul>
+        <h3>Diagnostics</h3>
+        <ul>
+          <li>Support reports now include GPU clock speed, power state, temperature and slowdown reasons, recorded once a second while frame generation runs. This shows whether stutter comes from GPU power management.</li>
+          <li>Support reports and F1 &gt; About now show this build&#x27;s label.</li>
+          <li>Save &amp; Send now asks for a short description whenever a problem is reported, not only when Other is chosen. After sending it shows the Report ID to quote when writing to support.</li>
+        </ul>
+        <h3>Known limitations</h3>
+        <ul>
+          <li>Heads and characters can double during fast pans at 30-to-60. Head protection reduces that, but it can cause patches in dense vegetation and leaves a soft outline around characters.</li>
+          <li>Repeating detail (arches, staircases, fences, window grids, rows of lights) can still bend or flicker for a frame during fast camera movement.</li>
+          <li>A very fast pan across a repeating pattern can show a warped frame where the previous build stuttered.</li>
+          <li>Minimaps that rotate with the camera can smear or double during fast camera movement. A custom mask over the minimap (F1 &gt; Masks) keeps it clean.</li>
+          <li>The softer edge of Head protection is SDR-only.</li>
+          <li>Frame generation pauses while the settings menu (F1) is open.</li>
+          <li>With VSync off, motion can still look uneven on the Fast Response setting, at 40 or 60 to 120 FPS and on fixed-refresh displays. At 40 or 60 to 120 FPS on a 120 Hz display the picture can also tear. Turn VSync on there (Alt+V). The frame generation settings show a reminder while VSync is off.</li>
+          <li>The Masks tab and the Motion detail descriptions are in English in every language.</li>
+          <li>This update was tested live at 1080p and 4K SDR on an RTX 5080. 1440p and HDR use the same rules but were not re-tested live.</li>
+        </ul>
+        <p class="section-description">More limitations and their workarounds are in the <a href="faq.html#framegen">FAQ</a>.</p>
+        <h2>Also new since the previous Steam version</h2>
+        <h3>Frame generation</h3>
+        <ul>
+          <li>NitLink FG now has NVIDIA RTX and Compatibility options, with shared HUD and text protection.</li>
+          <li>NitLink FG (NVIDIA RTX) adds TensorRT acceleration for supported NVIDIA configurations at 1080p, 1440p and 4K.</li>
+          <li>NitLink FG (Compatibility) uses Vulkan. This is the default for new installations and the option for other compatible GPUs.</li>
+          <li>Frame generation supports HDR input with both NitLink FG options at 1080p, 1440p and 4K.</li>
+          <li>Improved HUD protection at 1080p, 1440p and 4K SDR. Status icons, money, subtitles, button prompts and quest markers stay steadier during fast camera movement. It works on both NitLink FG options and on 30 and 60 FPS sources.</li>
+          <li>Motion detail is now Performance, Balanced or Quality.</li>
+          <li>Reduced scenery cutouts caused by HUD protection copying background into generated frames.</li>
+          <li>Optimized text-protection processing to reduce its overhead. Performance varies by mode, resolution and GPU; this is not a whole-system GPU-usage guarantee.</li>
+        </ul>
+        <h3>Recording and replay clips</h3>
+        <ul>
+          <li>Record the final NitLink picture and console audio at the current volume to a local SDR MP4 at up to 60 FPS, in 1080p or 4K (F1 &gt; Recording &gt; Resolution; 1080p is the default).</li>
+          <li>Start and stop a recording, record a selected duration, or enable the replay buffer to save the most recent 15 or 30 seconds.</li>
+          <li>Ctrl+Alt+R starts/stops recording. Ctrl+Alt+C saves a recent clip after the replay buffer has been enabled.</li>
+          <li>Open saved clips directly from the Recording tab. Files are stored in Videos / NitLink / Clips; no desktop or microphone capture is included.</li>
+          <li>Replay starts off. Recording and replay use additional resources, and their output is SDR-only.</li>
+        </ul>
+        <h3>Custom protection masks</h3>
+        <ul>
+          <li>Move and resize rectangular or oval masks directly on the game preview.</li>
+          <li>Protect radar/minimaps, crosshairs, subtitles or other fixed HUD areas. Adjust edge softness and save separate layouts for different games.</li>
+          <li>Masked regions use real frames, including any scenery within the region. Keep masks tight; they do not track or reconstruct moving characters.</li>
+          <li>Existing manual mask layouts and game preferences are preserved.</li>
+        </ul>
+        <h3>Diagnostics HUD and settings</h3>
+        <ul>
+          <li>A redesigned on-screen HUD offers Basic and Advanced views, plus adjustable text size. Ctrl+F3 shows or hides it.</li>
+          <li>Basic shows generation state, selected mode, active engine, capture rate, estimated game rate and delivered output.</li>
+          <li>Advanced adds presentation/render timing, available GPU and CPU readings, memory use, generation timing, delivery delay and late/skip counters. Unsupported readings are shown as unavailable.</li>
+          <li>The footer explains where to switch views: F1 &gt; About &gt; Diagnostics overlay.</li>
+          <li>Frame generation and Recording now have their own settings tabs.</li>
+          <li>Support reports offer Save only and Save &amp; Send. Save &amp; Send asks three short questions, with a text box when Other is chosen, then shows a short sharing confirmation. It keeps a local copy and shows a receipt only after NitLink confirms delivery.</li>
+          <li>What&#x27;s new can be reopened from About; automatic display is optional.</li>
+        </ul>
+        <h3>Delivery and recovery</h3>
+        <ul>
+          <li>Improved preview recovery after dark scenes, interrupted capture and delayed presentation, with clearer startup and delivery-failure status.</li>
+          <li>Separate saved delivery timing for resolution, mode and source frame rate, preserving valid older preferences.</li>
+          <li>Generation work retires before mode or multiplier changes. Text helper shutdown is bounded during changes and application close.</li>
+        </ul>
+        <h3>Existing settings</h3>
+        <ul>
+          <li>The previous Regular mode and the NVIDIA frame generation modes have been removed. A saved selection of any of them moves to NitLink FG (Compatibility).</li>
+        </ul>
+      </section>
+
+      <section class="release-block" id="github-1-2-6">
+        <h2>NitLink on GitHub 1.2.6</h2>
+        <p class="release-meta">November 2026 · <a href="https://github.com/nitlink-dev/nitlink/releases/latest">Download</a></p>
+        <p class="section-description">The free capture viewer. It has no frame generation.</p>
+        <ul>
+          <li>Hide PC cursor during gameplay: a new F1 toggle, off by default. It hides the PC pointer over live video in the active NitLink window, windowed or fullscreen. The pointer stays visible in the settings, in picture-in-picture and over other apps.</li>
+          <li>Turkish settings menu: pick Türkçe in F1; a Turkish Windows selects it automatically. Toasts and HUD text remain in English. Translation by karsiyakali1912.</li>
+        </ul>
+        <p class="section-description">Earlier GitHub releases are listed on the <a href="https://github.com/nitlink-dev/nitlink/releases">releases page</a>.</p>
+      </section>
+    </div>
+  </main>
+  <footer>
+    <div class="wrap footer-inner">
+      <span>NitLink · Klosed Lab · Official project</span>
+      <nav class="footer-links" aria-label="Project links"><a href="https://store.steampowered.com/app/5346980/">Steam</a><a href="https://github.com/nitlink-dev/nitlink">GitHub</a><a href="faq.html">FAQ</a><a href="release-notes.html">Release notes</a><a href="https://youtu.be/w8Rq5Bonbgg">YouTube</a><a href="https://ko-fi.com/klosed89">Ko-fi</a></nav>
+    </div>
+    <p class="wrap steam-credit">Steam and the Steam logo are trademarks and/or registered trademarks of Valve Corporation in the U.S. and/or other countries.</p>
+  </footer>
+</body>
+</html>

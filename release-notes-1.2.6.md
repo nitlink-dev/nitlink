@@ -2,7 +2,7 @@
 
 [![NitLink with frame generation: available now on Steam](https://raw.githubusercontent.com/nitlink-dev/nitlink/main/docs/images/steam-banner-available.png)](https://store.steampowered.com/app/5346980/)
 
-**NitLink with built-in frame generation is now available on [Steam](https://store.steampowered.com/app/5346980/).** It shows 30 fps console games at 60 fps, with the extra frames generated on the PC GPU. Frame generation adds delay and does not change the console's own frame rate; see the Steam page for GPU requirements. The viewer on GitHub stays free and open source.
+**NitLink with built-in frame generation is now available on [Steam](https://store.steampowered.com/app/5346980/).** It shows 30 fps console games at 60 fps, and 40 or 60 fps games at 120 fps on a 120 Hz display, with the extra frames generated on the PC GPU. Frame generation adds delay and does not change the console's own frame rate; see the Steam page for GPU requirements. The viewer on GitHub stays free and open source.
 
 This release adds an option to hide the PC cursor over the game and a Turkish settings menu.
 

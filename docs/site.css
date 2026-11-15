@@ -311,3 +311,26 @@ td { color: var(--secondary); font-variant-numeric: tabular-nums; }
   .header-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
   .header-links > a { white-space: nowrap; padding-block: 8px; }
 }
+
+/* FAQ and release notes pages */
+.doc-page { padding-block: 64px 84px; }
+.doc-page > .wrap { width: min(880px, calc(100% - 96px)); }
+.doc-page h1 { font-size: clamp(2rem, 3.2vw, 2.85rem); font-weight: 500; line-height: 1.14; letter-spacing: -.035em; }
+.doc-page .section-description { margin-top: 16px; }
+.doc-toc { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 26px; font-size: .9375rem; }
+.doc-toc a { color: var(--accent); text-decoration: none; padding-block: 6px; }
+.doc-toc a:hover { text-decoration: underline; }
+.doc-page h2 { font-size: 1.5rem; letter-spacing: -.02em; margin: 52px 0 20px; scroll-margin-top: 90px; }
+.doc-page h3 { font-size: 1.0625rem; font-weight: 600; margin: 30px 0 10px; }
+.doc-page .faq details { scroll-margin-top: 90px; }
+.doc-page .faq details:first-child summary { padding-top: 15px; }
+.doc-page .faq details p + p { margin-top: -6px; }
+.doc-page .faq details ul { padding: 0 0 17px 20px; margin: -8px 0 0; }
+.doc-page ul { color: var(--secondary); font-size: .9375rem; line-height: 1.65; padding-left: 20px; margin: 8px 0 0; }
+.doc-page .faq ul { font-size: .875rem; }
+.doc-page li + li { margin-top: 7px; }
+.doc-page a { color: var(--accent); }
+.release-meta { color: var(--muted); font-size: .875rem; margin-top: 6px; }
+.release-block { border-top: 1px solid var(--line); margin-top: 44px; }
+.release-block > h2 { margin-top: 36px; }
+@media (max-width: 720px) { .doc-page > .wrap { width: calc(100% - 40px); } .doc-page { padding-block: 40px 60px; } }
