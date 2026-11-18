@@ -207,7 +207,7 @@ std::optional<SettingsMessage> ParseSettingsMessage(std::wstring_view json) {
             !Uint(*value, L"fps", 1000, f.fps)) return std::nullopt;
         const auto fmt = value->fields.find(L"format");
         if (fmt == value->fields.end() || !Text(fmt->second, 4) ||
-            !OneOf(fmt->second.text, {L"", L"NV12", L"P010", L"BGRA"})) return std::nullopt;
+            !OneOf(fmt->second.text, {L"", L"NV12", L"P010", L"BGRA", L"YUY2"})) return std::nullopt;
         f.format = fmt->second.text;
         const bool rational = value->fields.count(L"fpsNumerator") != 0;
         if (value->fields.size() != (rational ? 6u : 4u)) return std::nullopt;
